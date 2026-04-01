@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local
+local.properties
+*.iml
+
+# IDE
+.idea/*
+!.idea/codeStyles/
+!.idea/inspectionProfiles/
+!.idea/runConfigurations.xml
+!.idea/.gitignore
+
+# OS
+.DS_Store
+
+# Android / NDK
+.externalNativeBuild
+.cxx/
+captures/
+
+# Large bundled models (copy locally; use Git LFS if you need them in the remote)
+app/src/main/assets/models/*.gguf
+app/src/main/assets/models/*.bin
