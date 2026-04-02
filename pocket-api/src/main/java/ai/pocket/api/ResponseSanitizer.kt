@@ -94,10 +94,22 @@ object ResponseSanitizer {
         result = result.replace("<think>", "").replace("</think>", "")
         result = result.replace("<thought>", "").replace("</thought>", "")
 
+        // 1b. Subword tokenizers glue fragments (e.g. "on"+"U.S.", "constitutes"+"a").
+        result = fixGluedTokenizerArtifacts(result)
+
         // 2. Fix smashed numbered lists (e.g., "1. First 2. Second" -> "1. First\n2. Second")
-        // Look for: non-newline char + optional space + digit(s) + dot + optional space
-        // We use a positive lookahead to ensure we don't consume the next item's content.
-        result = result.replace(Regex("([^\\n])\\s*(\\d+\\.\\s*)"), "$1\n$2")
+        // Do not insert a newline when the `.` before "1." closes a letter–letter abbreviation
+        // (e.g. U.S., E.U., U.S.A.) or extra `.` after it (U.S..); only plain sentence ". " is a boundary.
+        result = Regex("([^\\n])\\s*(\\d+\\.\\s*)").replace(result) { m ->
+            val beforeList = m.groupValues[1]
+            val listHead = m.groupValues[2]
+            val dotIdx = m.range.first
+            if (beforeList == "." && isLetterDotAbbreviationClose(result, dotIdx)) {
+                m.value
+            } else {
+                "$beforeList\n$listHead"
+            }
+        }
 
         // 3. Fix smashed bullet points (e.g., "Item 1 - Item 2")
         // Look for: end of a sentence/word + optional space + bullet character + space
@@ -137,6 +149,39 @@ object ResponseSanitizer {
         }
 
         return result.trim()
+    }
+
+    /**
+     * True when the `.` at [dotIndex] closes an initialism of single letters separated by dots
+     * (`U.S.`, `E.U.`, `U.S.A.`, …), including optional extra `.` after the abbrev (sentence end).
+     * Requires at least two letter+dot pairs so plain `word. 1` still gets list splitting.
+     */
+    private fun isLetterDotAbbreviationClose(text: String, dotIndex: Int): Boolean {
+        if (dotIndex < 0 || dotIndex > text.lastIndex || text[dotIndex] != '.') return false
+        var i = dotIndex
+        while (i >= 0 && text[i] == '.') i--
+        if (i < 0 || !text[i].isLetter()) return false
+        var pairs = 0
+        while (true) {
+            if (i + 1 > text.lastIndex || text[i + 1] != '.') return false
+            pairs++
+            if (i < 2 || text[i - 1] != '.') return pairs >= 2
+            i -= 2
+        }
+    }
+
+    /**
+     * Detoken glitches: missing space before U.S.; long words ending in `s` jammed against article `a`
+     * (e.g. "constitutesa"" -> "constitutes a""). The 8+ letter guard avoids short names like "Theresa".
+     */
+    private fun fixGluedTokenizerArtifacts(s: String): String {
+        var t = s.replace(Regex("""(?<=[a-z])U\.S\.A\."""), " U.S.A.")
+        t = t.replace(Regex("""(?<=[a-z])U\.S\."""), " U.S.")
+        // "...sesa " / "...sa The" / "...sa" — article `a` glued after third-person/plural `s`.
+        t = Regex("""([a-z]{8,})sa(\s+[A-Z]|\s*[\u201C"\u2018'])""").replace(t) { m ->
+            "${m.groupValues[1]}s a${m.groupValues[2]}"
+        }
+        return t
     }
 }
 

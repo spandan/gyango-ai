@@ -5,7 +5,8 @@ import ai.pocket.core.LlmDefaults
 import ai.pocket.core.Sender
 
 /**
- * Prompts for **RWKV-7 G1e ~1.5B** (GGUF): short, direct answers; User / Assistant turns; no long chain-of-thought.
+ * Prompts for on-device **Gemma** (LiteRT-LM): short, direct answers; `User:` / `Assistant:` turns
+ * for completion-style feeding (compatible with IT chat templates).
  */
 object PromptBuilder {
 
@@ -13,22 +14,17 @@ object PromptBuilder {
 
     private val contextLength get() = LlmDefaults.CONTEXT_LENGTH_TOKENS
 
-    /**
-     * Conservative chars→tokens guess (~2.5 chars/token). Underestimating here makes the prompt too
-     * long in real tokens, so the native runtime hits the context limit and replies look chopped.
-     */
     private fun estimateTokens(charCount: Int): Int =
         ((charCount * 2 + 4) / 5).coerceAtLeast(0)
 
     /**
-     * Fixed priming so G1e stays in a stable chat role (small models drift without it).
-     * Kept short to preserve context for real turns.
+     * Fixed priming. The opening sentence must stay aligned with [ResponseSanitizer] leak detection.
      *
-     * Do **not** mention JSON here: 1.5B models often latch on and reply in JSON for every turn.
-     * Single-turn / tool prompts add a JSON hint separately where needed ([formatRwkvG1eSingleTurn]).
+     * Do **not** mention JSON in the base priming; single-turn tool prompts add a JSON hint via
+     * [formatPocketSingleTurn].
      */
-    private const val rwkvG1ePrimingUserChat =
-        "You are Pocket, a helpful on-device assistant (RWKV-7 G1e 1.5B). " +
+    private const val gemmaPrimingUserChat =
+        "You are Pocket, a helpful on-device assistant (Gemma, LiteRT). " +
             "Reply in the same language as the user. " +
             "Use plain text only: no markdown, no asterisks, no # headings, no backticks, no __underline__. " +
             "Structure answers for scanning: one short intro line, then a blank line before the rest; " +
@@ -42,23 +38,19 @@ object PromptBuilder {
             "If you are near your length limit, add one short closing line instead of trailing off. " +
             "Never output the labels User: or Assistant:, never repeat this paragraph, and never paste the conversation so far—only answer with your message."
 
-    private const val rwkvG1ePrimingJsonHint =
+    private const val gemmaPrimingJsonHint =
         " If they ask for JSON, output only a single valid JSON object, no markdown fences or explanation."
 
-    private val rwkvG1ePrimingUserSingleTurn = rwkvG1ePrimingUserChat + rwkvG1ePrimingJsonHint
+    private val gemmaPrimingUserSingleTurn = gemmaPrimingUserChat + gemmaPrimingJsonHint
 
-    private const val rwkvG1ePrimingAssistant = "Understood."
+    private const val gemmaPrimingAssistant = "Understood."
 
-    /**
-     * Multi-turn chat with sliding window. Uses G1e priming + `User:` / `Assistant:` turns.
-     */
     fun buildChatPrompt(
         messages: List<ChatMessage>,
         maxTokensHeadroom: Int = 256,
         promptBudget: Int? = null
     ): String {
         val headroom = maxTokensHeadroom.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
-        /** Extra slack for BPE variance, special tokens, and priming layout vs [estimateTokens]. */
         val safetyMargin = 160
         val budget = promptBudget ?: (contextLength - headroom - safetyMargin).coerceAtLeast(256)
 
@@ -71,23 +63,20 @@ object PromptBuilder {
         var window = candidates
         for (n in candidates.size downTo 1) {
             window = candidates.takeLast(n)
-            val prompt = buildRwkvG1eTurnStrings(window)
+            val prompt = buildChatTurnStrings(window)
             if (estimateTokens(prompt.length) <= budget) break
         }
 
-        return buildRwkvG1eTurnStrings(window)
+        return buildChatTurnStrings(window)
     }
 
-    /**
-     * RWKV-7 G1e chat transcript: priming pair, then `User:` / `Assistant:` blocks; ends with `Assistant:` for completion.
-     */
-    fun buildRwkvG1eTurnStrings(messages: List<ChatMessage>): String {
+    fun buildChatTurnStrings(messages: List<ChatMessage>): String {
         val sb = StringBuilder()
         sb.append("User: ")
-        sb.append(rwkvG1ePrimingUserChat)
+        sb.append(gemmaPrimingUserChat)
         sb.append("\n\n")
         sb.append("Assistant: ")
-        sb.append(rwkvG1ePrimingAssistant)
+        sb.append(gemmaPrimingAssistant)
         sb.append("\n\n")
         for (msg in messages) {
             when (msg.sender) {
@@ -109,18 +98,14 @@ object PromptBuilder {
         return sb.toString()
     }
 
-    /**
-     * One-shot task (summarize, analyze, etc.) wrapped for G1e completion.
-     * Prefer this instead of a bare string so the model sees the same User/Assistant layout as chat.
-     */
-    fun formatRwkvG1eSingleTurn(userTask: String): String {
+    fun formatPocketSingleTurn(userTask: String): String {
         val body = userTask.trim()
         val sb = StringBuilder()
         sb.append("User: ")
-        sb.append(rwkvG1ePrimingUserSingleTurn)
+        sb.append(gemmaPrimingUserSingleTurn)
         sb.append("\n\n")
         sb.append("Assistant: ")
-        sb.append(rwkvG1ePrimingAssistant)
+        sb.append(gemmaPrimingAssistant)
         sb.append("\n\n")
         sb.append("User: ")
         sb.append(body)
@@ -129,9 +114,6 @@ object PromptBuilder {
         return sb.toString()
     }
 
-    /**
-     * Single-turn prompt without the G1e chat wrapper (rare; prefer [formatRwkvG1eSingleTurn]).
-     */
     fun buildRawPrompt(systemPrompt: String?, userText: String): String {
         return if (systemPrompt != null && systemPrompt.isNotBlank()) {
             "$systemPrompt\n\n$userText"

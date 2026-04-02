@@ -141,7 +141,7 @@ private fun ProcessTextScreen(
             ProcessTextAction.DRAFT_REPLY ->
                 "Draft a short professional reply to the message below. No subject line.\n\n$selectedText"
         }
-        val prompt = PromptBuilder.formatRwkvG1eSingleTurn(userTask)
+        val prompt = PromptBuilder.formatPocketSingleTurn(userTask)
         try {
             orchestrator.generate(
                 request = OrchestrationRequest(

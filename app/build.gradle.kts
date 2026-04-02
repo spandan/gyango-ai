@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
@@ -28,8 +29,7 @@ android {
     }
 
     androidResources {
-        // GGML / GGUF weights: store uncompressed in APK; faster first copy + mmap-friendly.
-        noCompress += listOf("bin", "gguf")
+        noCompress += listOf("litertlm", "task", "tflite")
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*/.DS_Store"
     }
 
@@ -41,10 +41,6 @@ android {
     buildFeatures {
         compose = true
         aidl = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
     }
 
     kotlinOptions {
@@ -135,10 +131,9 @@ dependencies {
     implementation("com.google.android.material:material:1.13.0")
 
     implementation(project(":feature-chatbot"))
-    implementation(project(":pocket-whisper"))
     implementation(project(":pocket-api"))
     implementation(project(":pocket-core"))
-    implementation(project(":pocket-models-llm"))
+    implementation(project(":pocket-models-gemma"))
     implementation(project(":pocket-orchestration"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

@@ -22,6 +22,8 @@ local.properties
 .cxx/
 captures/
 
-# Large bundled models (copy locally; use Git LFS if you need them in the remote)
+# Large bundled models (LiteRT-LM / legacy GGUF); copy locally or download at runtime
+app/src/main/assets/models/*.litertlm
+app/src/main/assets/models/*.task
 app/src/main/assets/models/*.gguf
 app/src/main/assets/models/*.bin

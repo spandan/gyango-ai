@@ -41,7 +41,7 @@ class InferenceService : Service() {
                         else ->
                             "Summarize the following text in a few short paragraphs or bullets. Be concise.\n\n$text"
                     }
-                    val prompt = PromptBuilder.formatRwkvG1eSingleTurn(userTask)
+                    val prompt = PromptBuilder.formatPocketSingleTurn(userTask)
                     orchestrator.generate(
                         request = OrchestrationRequest(
                             prompt = prompt,

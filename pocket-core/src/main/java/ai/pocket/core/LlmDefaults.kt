@@ -1,16 +1,13 @@
 package ai.pocket.core
 
 /**
- * Must match native `n_ctx` ([RwkvLlm], [NativeLlmBridge]) and [ai.pocket.api.PromptBuilder] budgeting.
- * Lower values reduce allocator pressure and peak RSS on phones.
+ * Prompt / settings budgeting for on-device LLM ([ai.pocket.api.PromptBuilder]). LiteRT-LM applies
+ * its own context limits from the bundled model.
  */
 object LlmDefaults {
-    const val CONTEXT_LENGTH_TOKENS: Int = 2048
+    const val CONTEXT_LENGTH_TOKENS: Int = 8192
 
-    /**
-     * Upper bound on llama.cpp worker threads for phones. Flagship SoCs like Tensor G4
-     * can handle more, but we cap to 4 to balance speed and thermal throttling.
-     */
+    /** Kept for API compatibility with settings UI. */
     const val LLM_INFERENCE_THREADS_CAP: Int = 4
 
     /**

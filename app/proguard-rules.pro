@@ -9,7 +9,7 @@
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
--keep class ai.pocket.native.NativeLlmBridge { *; }
+-keep class com.google.ai.edge.litertlm.** { *; }
 -keep class ai.pocket.whisper.WhisperBridge { *; }
 
 # kotlinx.serialization
