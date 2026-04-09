@@ -20,17 +20,41 @@ import ai.pocket.orchestration.Orchestrator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Chat UI state and streaming inference.
+ *
+ * **Initialization:** On startup we **warm up** the default Gemma model on a background dispatcher
+ * (same idea as `lifecycleScope.launch(Dispatchers.IO) { manager.initialize(...) }` in an Activity).
+ * The app uses a shared [Orchestrator] → [ai.pocket.models.gemma.GemmaLiteRtLlm], which copies the
+ * bundled asset ([ai.pocket.models.gemma.GemmaLiteRtLlm.DEFAULT_MODEL_ASSET]) to app storage before
+ * opening LiteRT. For a **standalone** flow with a file you downloaded yourself:
+ *
+ * ```
+ * viewModelScope.launch(Dispatchers.IO) {
+ *     val manager = GemmaModelManager(applicationContext)
+ *     manager.initialize(File(filesDir, "gemma-4-E2B-it-int4.litertlm").absolutePath)
+ *     manager.chatStream("Hello").collect { chunk ->
+ *         withContext(Dispatchers.Main) { /* append chunk to UI */ }
+ *     }
+ * }
+ * ```
+ *
+ * Voice input uses the system speech recognizer.
+ */
 class ChatViewModel(
     private val orchestrator: Orchestrator,
     private val repository: ChatRepository,
-    private val appContext: Context
+    private val appContext: Context,
 ) : ViewModel() {
 
     companion object {
@@ -48,8 +72,18 @@ class ChatViewModel(
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
-    private val _isLoadingModel = MutableStateFlow(false)
-    val isLoadingModel: StateFlow<Boolean> = _isLoadingModel.asStateFlow()
+    /** Gemma warm-up at startup (never gated on [isGenerating]). */
+    private val _isLlmBootstrapping = MutableStateFlow(false)
+
+    /** Reloading Gemma mid-stream (e.g. after idle eviction). */
+    private val _isPhaseLoadingModel = MutableStateFlow(false)
+
+    /** True while Gemma is loading for chat (bootstrap or phase). */
+    val isLoadingModel: StateFlow<Boolean> = combine(
+        _isLlmBootstrapping,
+        _isPhaseLoadingModel,
+    ) { boot, phase -> boot || phase }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _settings = MutableStateFlow(InferenceSettings())
     val settings: StateFlow<InferenceSettings> = _settings.asStateFlow()
@@ -57,7 +91,20 @@ class ChatViewModel(
     private val _documentError = MutableStateFlow<String?>(null)
     val documentError: StateFlow<String?> = _documentError.asStateFlow()
 
+    private val _isListeningToMic = MutableStateFlow(false)
+    val isListeningToMic: StateFlow<Boolean> = _isListeningToMic.asStateFlow()
+
+    private val _voiceError = MutableStateFlow<String?>(null)
+    val voiceError: StateFlow<String?> = _voiceError.asStateFlow()
+
     init {
+        viewModelScope.launch {
+            repository.settingsFlow.collect { persisted ->
+                _settings.value = persisted.copy(
+                    maxTokens = persisted.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
+                )
+            }
+        }
         viewModelScope.launch {
             repository.historyFlow.collect { list ->
                 if (!_isGenerating.value) {
@@ -67,6 +114,38 @@ class ChatViewModel(
                 idGenerator.set(maxId)
             }
         }
+        // Eager-load Gemma (LiteRT-LM): copies asset → filesDir on first open inside [GemmaLiteRtLlm].
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main.immediate) { _isLlmBootstrapping.value = true }
+            try {
+                orchestrator.warmUpDefaultModel()
+            } catch (e: Exception) {
+                Log.e(TAG, "Gemma model warm-up failed", e)
+            } finally {
+                withContext(Dispatchers.Main.immediate) { _isLlmBootstrapping.value = false }
+            }
+        }
+    }
+
+    /** Reload Gemma + voice after idle eviction or returning to the app. Does not flip UI loading flags. */
+    fun refreshModelsAfterForeground() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { orchestrator.warmUpDefaultModel() }
+        }
+    }
+
+    /** Handles final text from the microphone and keeps replies in the user's selected language. */
+    fun onVoiceTranscript(transcript: String) {
+        if (transcript.isBlank() || _isGenerating.value) return
+        val tag = _settings.value.speechInputLocaleTag
+        val isEnglish = tag.startsWith("en", ignoreCase = true)
+        val isTelugu = tag.startsWith("te", ignoreCase = true)
+        val message = when {
+            isEnglish || isTelugu -> transcript.trim()
+            else ->
+                "The user spoke in language/locale \"$tag\". Transcription (may be imperfect):\n${transcript.trim()}\n\nUnderstand their intent, and answer helpfully in the same language they used."
+        }
+        onUserSend(message)
     }
 
     fun onUserSend(text: String) {
@@ -97,7 +176,8 @@ class ChatViewModel(
         val assistantMessageId = currentMessages.last().id
         val prompt = PromptBuilder.buildChatPrompt(
             messages = currentMessages,
-            maxTokensHeadroom = _settings.value.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
+            maxTokensHeadroom = _settings.value.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP),
+            preferredReplyLocaleTag = _settings.value.speechInputLocaleTag,
         )
         val sanitizer = StreamingResponseSanitizer()
 
@@ -138,7 +218,7 @@ class ChatViewModel(
                     },
                     onPhaseChange = { phase ->
                         viewModelScope.launch(Dispatchers.Main.immediate) {
-                            _isLoadingModel.value = (phase == LoadingPhase.LOADING_MODEL)
+                            _isPhaseLoadingModel.value = (phase == LoadingPhase.LOADING_MODEL)
                         }
                     }
                 )
@@ -167,16 +247,36 @@ class ChatViewModel(
                     }
                 }
                 _isGenerating.value = false
-                _isLoadingModel.value = false
+                _isPhaseLoadingModel.value = false
                 repository.saveHistory(_messages.value)
             }
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+    }
+
     fun updateSettings(newSettings: InferenceSettings) {
-        _settings.value = newSettings.copy(
+        val coerced = newSettings.copy(
             maxTokens = newSettings.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
         )
+        _settings.value = coerced
+        viewModelScope.launch {
+            repository.saveInferenceSettings(coerced)
+        }
+    }
+
+    fun setListeningToMic(listening: Boolean) {
+        _isListeningToMic.value = listening
+    }
+
+    fun setVoiceError(message: String?) {
+        _voiceError.value = message
+    }
+
+    fun clearVoiceError() {
+        _voiceError.value = null
     }
 
     fun clearChat() {

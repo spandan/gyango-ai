@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Legacy (RWKV → GGUF for llama.cpp). The Gemma/LiteRT branch bundles .litertlm under assets/models/.
 # Convert BlinkDL RWKV-7 World .pth (e.g. RWKV-x070-World-1.5B-v3-*.pth) to GGUF, then Q4_K.
 # Prereqs: git, python3, torch, a built llama.cpp tree with ./llama-quantize
 #

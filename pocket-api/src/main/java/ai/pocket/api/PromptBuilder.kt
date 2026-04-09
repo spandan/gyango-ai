@@ -21,11 +21,10 @@ object PromptBuilder {
      * Fixed priming. The opening sentence must stay aligned with [ResponseSanitizer] leak detection.
      *
      * Do **not** mention JSON in the base priming; single-turn tool prompts add a JSON hint via
-     * [formatPocketSingleTurn].
+     * [formatPocketSingleTurn] (with [replyLanguageInstruction]).
      */
     private const val gemmaPrimingUserChat =
         "You are Pocket, a helpful on-device assistant (Gemma, LiteRT). " +
-            "Reply in the same language as the user. " +
             "Use plain text only: no markdown, no asterisks, no # headings, no backticks, no __underline__. " +
             "Structure answers for scanning: one short intro line, then a blank line before the rest; " +
             "use lines that start with \"- \" or \"1. \" for lists; " +
@@ -41,14 +40,30 @@ object PromptBuilder {
     private const val gemmaPrimingJsonHint =
         " If they ask for JSON, output only a single valid JSON object, no markdown fences or explanation."
 
-    private val gemmaPrimingUserSingleTurn = gemmaPrimingUserChat + gemmaPrimingJsonHint
-
     private const val gemmaPrimingAssistant = "Understood."
+
+    private fun languageNameForLocaleTag(tag: String): String = when {
+        tag.startsWith("te", ignoreCase = true) -> "Telugu"
+        tag.startsWith("hi", ignoreCase = true) -> "Hindi"
+        tag.startsWith("en", ignoreCase = true) -> "English"
+        else -> "English"
+    }
+
+    /**
+     * Binds assistant reply language to the user's app language (e.g. [InferenceSettings.speechInputLocaleTag]).
+     */
+    fun replyLanguageInstruction(localeTag: String): String {
+        val name = languageNameForLocaleTag(localeTag)
+        return "The user's preferred language for your replies is $name (locale: $localeTag). " +
+            "Write every assistant message in $name unless they explicitly ask for a different language, " +
+            "or another language is clearly required for code, quotes, or proper names."
+    }
 
     fun buildChatPrompt(
         messages: List<ChatMessage>,
         maxTokensHeadroom: Int = 256,
-        promptBudget: Int? = null
+        promptBudget: Int? = null,
+        preferredReplyLocaleTag: String = "en-US",
     ): String {
         val headroom = maxTokensHeadroom.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
         val safetyMargin = 160
@@ -63,17 +78,22 @@ object PromptBuilder {
         var window = candidates
         for (n in candidates.size downTo 1) {
             window = candidates.takeLast(n)
-            val prompt = buildChatTurnStrings(window)
+            val prompt = buildChatTurnStrings(window, preferredReplyLocaleTag)
             if (estimateTokens(prompt.length) <= budget) break
         }
 
-        return buildChatTurnStrings(window)
+        return buildChatTurnStrings(window, preferredReplyLocaleTag)
     }
 
-    fun buildChatTurnStrings(messages: List<ChatMessage>): String {
+    fun buildChatTurnStrings(
+        messages: List<ChatMessage>,
+        preferredReplyLocaleTag: String = "en-US",
+    ): String {
         val sb = StringBuilder()
         sb.append("User: ")
         sb.append(gemmaPrimingUserChat)
+        sb.append(" ")
+        sb.append(replyLanguageInstruction(preferredReplyLocaleTag))
         sb.append("\n\n")
         sb.append("Assistant: ")
         sb.append(gemmaPrimingAssistant)
@@ -98,11 +118,17 @@ object PromptBuilder {
         return sb.toString()
     }
 
-    fun formatPocketSingleTurn(userTask: String): String {
+    fun formatPocketSingleTurn(
+        userTask: String,
+        preferredReplyLocaleTag: String = "en-US",
+    ): String {
         val body = userTask.trim()
         val sb = StringBuilder()
         sb.append("User: ")
-        sb.append(gemmaPrimingUserSingleTurn)
+        sb.append(gemmaPrimingUserChat)
+        sb.append(" ")
+        sb.append(replyLanguageInstruction(preferredReplyLocaleTag))
+        sb.append(gemmaPrimingJsonHint)
         sb.append("\n\n")
         sb.append("Assistant: ")
         sb.append(gemmaPrimingAssistant)

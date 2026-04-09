@@ -1,5 +1,6 @@
 package ai.pocket
 
+import ai.pocket.BuildConfig
 import ai.pocket.models.gemma.GemmaLiteRtLlm
 import ai.pocket.orchestration.DefaultModelRegistry
 import ai.pocket.orchestration.DefaultOrchestrator
@@ -37,6 +38,7 @@ class PocketAIApplication : Application(), InferenceActivityTracker {
             applicationContext = this,
             assetRelativePath = GEMMA_LITE_ASSET,
             modelId = GEMMA_MODEL_ID,
+            absoluteModelPathOverride = BuildConfig.GEMMA_MODEL_ABSOLUTE_PATH.takeIf { it.isNotBlank() },
         )
         val registry = DefaultModelRegistry()
         registry.register(gemma)
@@ -74,19 +76,23 @@ class PocketAIApplication : Application(), InferenceActivityTracker {
         }
     }
 
+    /** Unload Gemma and voice models immediately (e.g. activity finishing). */
+    fun unloadAllModelsFromMemoryNow() {
+        idleHandler.removeCallbacks(evictModelsRunnable)
+        appScope.launch {
+            runCatching { orchestrator.unloadDefaultModelFromMemory() }
+        }
+    }
+
     private fun scheduleModelEvictionDelayed() {
         idleHandler.removeCallbacks(evictModelsRunnable)
         idleHandler.postDelayed(evictModelsRunnable, MODEL_IDLE_MS)
     }
 
     companion object {
-        private const val MODEL_IDLE_MS = 15 * 60 * 1000L
+        private const val MODEL_IDLE_MS = 10 * 60 * 1000L
 
-        /**
-         * LiteRT-LM bundle under `app/src/main/assets/`. Default matches
-         * [google/gemma-3n-E2B-it-litert-lm](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm)
-         * (multimodal: swap in Gemma 4 artifacts when available).
-         */
+        /** LiteRT-LM bundle: `app/src/main/assets/models/gemma-4-E2B-it.litertlm` (see [GemmaLiteRtLlm]). */
         private const val GEMMA_LITE_ASSET = GemmaLiteRtLlm.DEFAULT_MODEL_ASSET
         private const val GEMMA_MODEL_ID = GemmaLiteRtLlm.DEFAULT_MODEL_ID
     }

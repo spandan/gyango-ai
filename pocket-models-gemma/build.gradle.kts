@@ -15,15 +15,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions {
-        jvmTarget = "17"
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
 dependencies {
     implementation(project(":pocket-core"))
     implementation(project(":pocket-api"))
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
+    // LiteRT-LM core engine (NPU / GPU / CPU fallback in native runtime).
+    // Docs sometimes show `com.google.ai.edge:litert-lm:1.0.0-alpha01`; that GAV does not resolve on
+    // google() / mavenCentral(). The published Android artifact is `litertlm-android` (same
+    // `com.google.ai.edge.litertlm.*` Kotlin API).
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

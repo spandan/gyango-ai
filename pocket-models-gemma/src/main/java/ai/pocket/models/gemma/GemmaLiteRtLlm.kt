@@ -2,15 +2,11 @@ package ai.pocket.models.gemma
 
 import ai.pocket.core.GenerateRequest
 import ai.pocket.core.LoadingPhase
+import ai.pocket.core.LlmDefaults
 import ai.pocket.core.MemoryManagedLlm
 import ai.pocket.core.PhasedLlm
 import android.content.Context
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.ConversationConfig
-import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.Message
-import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.sync.Mutex
@@ -18,33 +14,45 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * On-device **Gemma** via **LiteRT-LM** (TFLite/LiteRT stack). Targets Gemma 3n `.litertlm` bundles;
- * Gemma 4 bundles should work the same way when published—swap in [assetRelativePath].
+ * On-device **Gemma** via **LiteRT-LM** (TFLite/LiteRT stack).
+ * Delegates engine lifecycle and streaming to [GemmaModelManager] (**NPU → GPU → CPU**).
+ * Requires optional OpenCL / NPU native libs in the app manifest when using those backends.
  *
- * **Audio:** Gemma 3n supports multimodal input through LiteRT (`Content.AudioBytes`, etc.).
- * This class exposes **text** chat only; extend [generateWithPhase] to attach WAV bytes when you
- * wire the UI.
+ * **Audio:** multimodal models can use `Content.AudioBytes` in LiteRT; this class is text-only for now.
+ *
+ * **Settings:** [InferenceSettings.temperature] is passed into each [GemmaModelManager.chatStream].
+ * [InferenceSettings.maxTokens] is not a per-message cap in the published API; [EngineConfig.maxNumTokens]
+ * is set once at init to [LlmDefaults.CONTEXT_LENGTH_TOKENS] as KV budget (input+output sum).
  */
 class GemmaLiteRtLlm(
     private val applicationContext: Context,
     private val assetRelativePath: String = DEFAULT_MODEL_ASSET,
     override val modelId: String = DEFAULT_MODEL_ID,
+    /**
+     * Optional absolute path to a `.litertlm` file; when set, assets are not read and no duplicate
+     * copy is made from the APK (see [LiteRtModelPathProvider]).
+     */
+    private val absoluteModelPathOverride: String? = null,
 ) : PhasedLlm, MemoryManagedLlm {
 
     private val mutex = Mutex()
-    private var engine: Engine? = null
-    private val pathProvider = LiteRtModelPathProvider(applicationContext, assetRelativePath)
+    private val manager = GemmaModelManager(applicationContext)
+    private val pathProvider = LiteRtModelPathProvider(
+        applicationContext,
+        assetRelativePath,
+        absoluteModelPathOverride,
+    )
 
     private suspend fun ensureEngine(onPhaseChange: ((LoadingPhase) -> Unit)?) {
-        if (engine != null) return
+        if (manager.isInitialized) return
         onPhaseChange?.invoke(LoadingPhase.LOADING_MODEL)
         val path = withContext(Dispatchers.IO) { pathProvider.getOrCopyModel() }
-        val config = EngineConfig(
+        val cacheDir = applicationContext.cacheDir.absolutePath
+        manager.initialize(
             modelPath = path,
-            backend = Backend.CPU(),
-            cacheDir = applicationContext.cacheDir.absolutePath,
+            cacheDir = cacheDir,
+            maxNumTokens = LlmDefaults.CONTEXT_LENGTH_TOKENS,
         )
-        engine = Engine(config).also { it.initialize() }
         onPhaseChange?.invoke(LoadingPhase.GENERATING)
     }
 
@@ -59,8 +67,7 @@ class GemmaLiteRtLlm(
     override suspend fun unloadFromMemory() {
         mutex.withLock {
             withContext(Dispatchers.Default) {
-                engine?.close()
-                engine = null
+                manager.close()
             }
         }
     }
@@ -77,48 +84,22 @@ class GemmaLiteRtLlm(
         mutex.withLock {
             withContext(Dispatchers.Default) {
                 ensureEngine(onPhaseChange)
-                val eng = engine ?: error("LiteRT engine not initialized")
                 onPhaseChange(LoadingPhase.GENERATING)
-                val sampler = SamplerConfig(
-                    temperature = request.settings.temperature.toDouble(),
-                    topP = 0.95,
-                    topK = 64,
-                )
-                val conversation = eng.createConversation(ConversationConfig(samplerConfig = sampler))
-                conversation.use { conv ->
-                    var accumulated = ""
-                    conv.sendMessageAsync(request.prompt)
-                        .catch { e -> throw e }
-                        .collect { message: Message ->
-                            val full = messageText(message)
-                            when {
-                                full.startsWith(accumulated) && full.length > accumulated.length -> {
-                                    val delta = full.substring(accumulated.length)
-                                    if (delta.isNotEmpty()) onToken(delta)
-                                    accumulated = full
-                                }
-                                full.isNotEmpty() && full != accumulated -> {
-                                    onToken(full)
-                                    accumulated = full
-                                }
-                            }
-                        }
-                }
+                manager
+                    .chatStream(
+                        prompt = request.prompt,
+                        temperature = request.settings.temperature.toDouble(),
+                    )
+                    .catch { e -> throw e }
+                    .collect { chunk -> onToken(chunk) }
             }
         }
     }
 
-    private fun messageText(message: Message): String =
-        try {
-            message.text.orEmpty()
-        } catch (_: Throwable) {
-            message.toString()
-        }
-
     companion object {
-        /** Default asset path—replace filename after downloading the bundle from Hugging Face. */
-        const val DEFAULT_MODEL_ASSET = "models/gemma-3n-e2b-it.litertlm"
+        /** Asset path relative to `app/src/main/assets/` (copy `gemma-4-E2B-it.litertlm` into `models/`). */
+        const val DEFAULT_MODEL_ASSET = "models/gemma-4-E2B-it.litertlm"
 
-        const val DEFAULT_MODEL_ID = "gemma-3n-e2b-litertlm"
+        const val DEFAULT_MODEL_ID = "gemma-4-e2b-litertlm"
     }
 }

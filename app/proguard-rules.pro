@@ -10,7 +10,6 @@
     native <methods>;
 }
 -keep class com.google.ai.edge.litertlm.** { *; }
--keep class ai.pocket.whisper.WhisperBridge { *; }
 
 # kotlinx.serialization
 -dontnote kotlinx.serialization.AnnotationsKt

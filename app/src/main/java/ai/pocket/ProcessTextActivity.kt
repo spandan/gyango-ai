@@ -146,7 +146,7 @@ private fun ProcessTextScreen(
             orchestrator.generate(
                 request = OrchestrationRequest(
                     prompt = prompt,
-                    settings = InferenceSettings(temperature = 0.5f, maxTokens = LlmDefaults.MAX_NEW_TOKENS_CAP),
+                    settings = InferenceSettings(temperature = 0.80f, maxTokens = LlmDefaults.MAX_NEW_TOKENS_CAP),
                     toolId = "process_text"
                 ),
                 onToken = { token ->

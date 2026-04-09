@@ -1,0 +1,16 @@
+<config:device-targeting-config
+    xmlns:config="http://schemas.android.com/apk/config">
+
+    <config:device-group name="ram_12gb_plus">
+        <config:device-selector ram-min-bytes="8589934592"/>
+    </config:device-group>
+
+    <config:device-group name="ram_6gb">
+        <config:device-selector ram-min-bytes="4294967296" ram-max-bytes="8589934592"/>
+    </config:device-group>
+
+    <config:device-group name="ram_3gb">
+        <config:device-selector ram-max-bytes="4294967296"/>
+    </config:device-group>
+
+</config:device-targeting-config>

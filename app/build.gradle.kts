@@ -15,6 +15,37 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        // Per-ABI APKs: [android.splits.abi] below. Do not set [ndk.abiFilters] — AGP disallows it when
+        // ABI splits are enabled.
+
+        // Empty → bundled asset + copy to storage if needed ([LiteRtModelPathProvider]).
+        // Non-empty absolute path → load that file only (single copy: download / PAD / sideload).
+        buildConfigField("String", "GEMMA_MODEL_ABSOLUTE_PATH", "\"\"")
+
+    }
+
+    assetPacks += setOf(
+        ":ai-pack-teacher-3gb",
+        ":ai-pack-teacher-6gb",
+        ":ai-pack-teacher-12gb",
+    )
+
+    bundle {
+        deviceTargetingConfig = file("../device_targeting_config.xml")
+        deviceGroup {
+            enableSplit = true
+            defaultGroup = "other"
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
     }
 
     buildTypes {
@@ -26,10 +57,18 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            // Further restrict ABIs for faster debug installs if needed
+            // ndk { abiFilters.add("arm64-v8a") }
+        }
     }
 
     androidResources {
-        noCompress += listOf("litertlm", "task", "tflite")
+        // `.litertlm` is compressed in the APK (smaller install download). The runtime still needs a
+        // filesystem path, so the first run may extract to getExternalFilesDir (see LiteRtModelPathProvider).
+        // APK bytes + extracted file can both count toward “storage”; avoiding assets/ in production
+        // (download-only model) is the way to hold one full copy.
+        noCompress += listOf("task", "tflite")
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*/.DS_Store"
     }
 
@@ -41,11 +80,7 @@ android {
     buildFeatures {
         compose = true
         aidl = true
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
+        buildConfig = true
     }
 
     packaging {
@@ -60,9 +95,19 @@ android {
     applicationVariants.configureEach {
         val variantName = name
         outputs.configureEach {
+            val abi = filters.find { it.filterType.equals("ABI", ignoreCase = true) }
+                ?.identifier
+                ?: "universal"
             (this as com.android.build.gradle.internal.api.ApkVariantOutputImpl).outputFileName =
-                "pocketai-${variantName}.apk"
+                "pocketai-${variantName}-${abi}.apk"
         }
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        freeCompilerArgs.add("-opt-in=androidx.compose.material3.ExperimentalMaterial3Api")
     }
 }
 
@@ -137,4 +182,6 @@ dependencies {
     implementation(project(":pocket-orchestration"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.google.android.play:ai-delivery:0.1.1-alpha01")
+
 }
