@@ -1,0 +1,22 @@
+GyanGo (Gyango)
+================
+
+Copyright (c) 2026 Gyango. All rights reserved for proprietary application
+source code. See LICENSE.txt.
+
+This product includes third-party software and data. Attribution and license
+terms for open-source components, SDKs, and the on-device Gemma model are
+described in:
+
+  legal/THIRD_PARTY_OPEN_SOURCE.md
+
+A copy suitable for offline reference is also placed at:
+
+  app/src/main/assets/licenses/THIRD_PARTY_OPEN_SOURCE.md
+
+The Apache License, Version 2.0, is included at:
+
+  app/src/main/assets/licenses/Apache-2.0.txt
+
+"Gemma" is a trademark of Google LLC. "Android" and "Google Play" are
+trademarks of Google LLC.

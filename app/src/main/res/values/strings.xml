@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pocket AI</string>
-    <string name="process_text_pocket_ai">Pocket AI</string>
+    <string name="app_name">GyanGo</string>
+    <string name="process_text_gyango">GyanGo</string>
+    <string name="process_text_summarize_label">Summarize with GyanGo</string>
+    <string name="process_text_analyze_label">Analyze with GyanGo</string>
+    <string name="process_text_draft_label">Draft reply with GyanGo</string>
 </resources>

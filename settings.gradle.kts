@@ -7,6 +7,7 @@ pluginManagement {
     plugins {
         id("com.android.application") version "8.13.2"
         id("com.android.library") version "8.13.2"
+        id("com.android.asset-pack") version "8.13.2"
         id("org.jetbrains.kotlin.android") version "2.3.0"
         id("org.jetbrains.kotlin.plugin.compose") version "2.3.0"
         id("org.jetbrains.kotlin.plugin.serialization") version "2.3.0"
@@ -25,13 +26,15 @@ dependencyResolutionManagement {
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.10.0"
 }
-rootProject.name = "pocketAI"
+rootProject.name = "gyangoAI"
+
 include(":app")
-include(":pocket-core")
-include(":pocket-api")
-include(":pocket-models-gemma")
-include(":pocket-orchestration")
+include(":gyango-core")
+include(":gyango-litert-inference")
 include(":feature-chatbot")
-include(":ai-pack-teacher-3gb")
-include(":ai-pack-teacher-6gb")
-include(":ai-pack-teacher-12gb")
+project(":feature-chatbot").projectDir = file("features/chatbot")
+include(":gyango_pack_base_llm_0")
+include(":gyango_pack_base_llm_1")
+include(":gyango_pack_base_llm_2")
+include(":gyango_pack_base_llm_3")
+include(":gyango_pack_base_llm_4")

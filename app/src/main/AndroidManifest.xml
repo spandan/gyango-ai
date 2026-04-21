@@ -1,18 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="ai.pocket">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:name=".PocketAIApplication"
+        android:name=".GyangoApplication"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.PocketAI"
-        android:largeHeap="true">
+        android:theme="@style/Theme.GyangoAI"
+        android:largeHeap="true"
+        android:extractNativeLibs="true">
 
         <uses-native-library
             android:name="libvndksupport.so"
@@ -29,73 +30,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- Process Text: appears in overflow (⋮) when you select text. Tap ⋮ → Pocket AI options -->
-        <!-- SEND: "Share" on selected text also shows Pocket AI -->
-        <activity
-            android:name=".ProcessTextActivity"
-            android:exported="true"
-            android:theme="@style/Theme.PocketAI"
-            android:excludeFromRecents="true"
-            android:label="@string/app_name">
-            <!-- Direct PROCESS_TEXT so "Pocket AI" appears in overflow (defaults to Summarize) -->
-            <intent-filter android:label="@string/process_text_pocket_ai">
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <activity-alias
-            android:name=".ProcessTextSummarize"
-            android:targetActivity=".ProcessTextActivity"
-            android:exported="true"
-            android:label="Summarize with Pocket AI">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".ProcessTextAnalyze"
-            android:targetActivity=".ProcessTextActivity"
-            android:exported="true"
-            android:label="Analyze with Pocket AI">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity-alias>
-
-        <activity-alias
-            android:name=".ProcessTextDraft"
-            android:targetActivity=".ProcessTextActivity"
-            android:exported="true"
-            android:label="Draft reply with Pocket AI">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity-alias>
-
-        <!-- Bound service for other apps to use Pocket AI inference (summarize, analyze, draft) -->
-        <service
-            android:name=".InferenceService"
-            android:exported="true"
-            android:enabled="true">
-            <intent-filter>
-                <action android:name="ai.pocket.InferenceService" />
-            </intent-filter>
-        </service>
 
     </application>
 

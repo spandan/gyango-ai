@@ -1,4 +1,4 @@
-pocketAI.webp      - App UI (header, empty state)
-pocketAIIcon.webp  - App launcher icon (resized at build)
+gyangoAI.webp      - App UI (header, empty state)
+gyangoAIIcon.webp  - App launcher icon (resized at build)
 
-Add both. Without pocketAI.webp, "p" is shown in the header.
+Add both. Without gyangoAI.webp, a fallback letter is shown in the header.

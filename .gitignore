@@ -22,8 +22,11 @@ local.properties
 .cxx/
 captures/
 
-# Large bundled models (LiteRT-LM / legacy GGUF); copy locally or download at runtime
-app/src/main/assets/models/*.litertlm
+# Large bundled models; copy locally or download at runtime
 app/src/main/assets/models/*.task
-app/src/main/assets/models/*.gguf
+app/src/main/assets/models/*.tflite
+app/src/main/assets/models/*.litertlm
 app/src/main/assets/models/*.bin
+app/src/main/assets/models/*.mmproj
+gyango_pad_model_source/*.litertlm
+gyango_pack_base_llm_*/src/main/assets/models/pad_chunk_*.bin

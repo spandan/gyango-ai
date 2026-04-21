@@ -1,0 +1,101 @@
+Gyango Commercial License and Notices
+========================================
+
+Copyright (c) 2026 Gyango.
+All rights reserved.
+
+The user-facing product name is **GyanGo** (Android application id `ai.gyango`).
+Legal notices in this file refer to Gyango as the rights holder unless stated otherwise.
+
+This software and its source code are proprietary and confidential.
+No permission is granted to copy, modify, distribute, sublicense, publish, or
+commercialize this software except under a separate written agreement with Gyango.
+
+This project is NOT open source.
+
+----------------------------------------------------------------------------
+Open-source libraries and SDKs
+----------------------------------------------------------------------------
+
+The application **links to and ships with** open-source libraries and Google SDKs
+(for example: Kotlin, Jetpack Compose, AndroidX, Google Play Asset Delivery,
+Google ML Kit, LiteRT-LM Android runtime, PDFBox-Android, Material Components).
+
+A **consolidated third-party notice** (direct Gradle dependencies, intended
+license class, links to authoritative terms, and a maintenance checklist) is
+maintained at:
+
+- **Source tree:** `legal/THIRD_PARTY_OPEN_SOURCE.md`
+- **Shipped in APK** (offline copy): `app/src/main/assets/licenses/THIRD_PARTY_OPEN_SOURCE.md`
+
+A short **NOTICE** file at the repository root points to these locations.
+
+**ML Kit:** Text recognition and bundled on-device models are subject to
+[Google ML Kit terms](https://developers.google.com/ml-kit/terms) in addition to
+any open-source licenses in supporting libraries. Review Google’s documentation
+for the exact SDK and model version you distribute.
+
+**LiteRT-LM runtime:** The `com.google.ai.edge.litertlm:litertlm-android` artifact
+is distributed by Google; confirm the license in the Maven POM / AAR for the
+version you ship (typically Apache-2.0–compatible). See `legal/THIRD_PARTY_OPEN_SOURCE.md`.
+
+----------------------------------------------------------------------------
+Third-Party Model and Data Notices
+----------------------------------------------------------------------------
+
+1) Google Gemma (via LiteRT-LM packaging on Hugging Face)
+----------------------------------------------------------
+This product uses the Gemma 4 E2B instruction-tuned model packaged for LiteRT-LM.
+
+Model source (as obtained for this product):
+- https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
+
+That Hugging Face repository declares license **Apache-2.0** in its model card
+and references the upstream model card:
+- https://huggingface.co/google/gemma-4-E2B-it
+
+The model weights are licensed under the **Apache License, Version 2.0**.
+References:
+- https://github.com/google-deepmind/gemma/blob/main/LICENSE
+- https://www.apache.org/licenses/LICENSE-2.0
+
+Distribution/compliance requirements for Gemma-based releases:
+- Include a copy of the Apache 2.0 license with every distribution (the app
+  bundle/APK ships the canonical text at assets/licenses/Apache-2.0.txt).
+- Preserve existing attribution/copyright/license notices.
+- If modified files are redistributed, mark them with prominent change notices.
+- If an upstream NOTICE file is provided for the shipped model artifact, include
+  required NOTICE attributions in your distribution.
+
+Platform and trademark:
+- Accessing or redistributing files via Hugging Face is also subject to the
+  Hugging Face Terms of Service (https://huggingface.co/terms) for that use.
+- No rights are granted to use Google trademarks beyond nominative/reference
+  usage. Do not imply Google endorsement.
+- If you obtain Gemma weights from a source that adds additional terms, those
+  terms must also be satisfied for that artifact.
+
+"Gemma" is a trademark of Google LLC.
+
+----------------------------------------------------------------------------
+Compliance and Responsibility Notice
+----------------------------------------------------------------------------
+
+AI-generated content may be inaccurate, incomplete, or outdated and requires
+human review before reliance. The software is provided as an assistive tool
+only. Gyango disclaims liability for decisions, actions, losses, claims, or
+damages resulting from generated content or its use.
+
+----------------------------------------------------------------------------
+Internal Tracking
+----------------------------------------------------------------------------
+
+Commercial release owners should maintain:
+- Copy of Apache 2.0 license text shipped with the release artifact.
+- Source/attribution notices and any NOTICE content shipped with the release.
+- Record of any local modifications applied to model artifacts.
+- Versioned model manifest tied to each release (including HF revision/commit or
+  file checksum when applicable).
+- `legal/THIRD_PARTY_OPEN_SOURCE.md` and the APK copy under
+  `app/src/main/assets/licenses/THIRD_PARTY_OPEN_SOURCE.md` **updated and in sync**
+  whenever dependencies, SDKs, or model sources change.
