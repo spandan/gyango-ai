@@ -62,7 +62,7 @@ class GyangoApplication : Application(), InferenceActivityTracker {
             routingPolicy = DefaultRoutingPolicy(defaultModelId = llm.modelId),
             defaultModelId = llm.modelId,
             inferenceTracker = this,
-            enablePromptPayloadLogs = BuildConfig.VERBOSE_DEBUG_LOGS,
+            enablePromptPayloadLogs = BuildConfig.LLM_IO_LOGS,
         )
     }
 

@@ -514,8 +514,8 @@ class LiteRtEngineManager(private val context: Context) {
 
     private fun markerAssistantTurnLooksStructurallyComplete(full: String): Boolean {
         val t = full.trim()
-        if (GyangoOutputEnvelope.isOutputFormat(t)) {
-            return GyangoOutputEnvelope.hasClosedMemoryTag(t)
+        if (GyangoOutputEnvelope.isLessonEnvelope(t)) {
+            return GyangoOutputEnvelope.hasClosedLessonTail(t)
         }
         return false
     }

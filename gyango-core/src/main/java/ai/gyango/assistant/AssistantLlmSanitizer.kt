@@ -4,7 +4,7 @@ package ai.gyango.assistant
  * LLM-layer cleanup only: leaked priming, control tags, thinking blocks, and light structural fixes
  * (lists, bullets, glued math). Does not interpret JSON or markdown for UI.
  *
- * For the full string shown in chat bubbles, use [AssistantOutput.formatForDisplay].
+ * For the full string shown in chat bubbles, use [AssistantOutput.formatForDisplay] (markdown-capable polish).
  */
 object AssistantLlmSanitizer {
 
@@ -153,7 +153,11 @@ object AssistantLlmSanitizer {
         }
 
         result = result.replace(Regex("""(?m)^([2-9])([2-9]\.\s*[A-Za-z])"""), "$1\n$2")
-        result = result.replace(Regex("""(?m)^(\d+)\.(\S)"""), "$1. $2")
+        // Do not insert a space after `3.` when the rest is digits (e.g. 3.14); only fix glued list markers like `3.Word`.
+        result = Regex("""(?m)^(\d+)\.(\S)""").replace(result) { m ->
+            val rest = m.groupValues[2]
+            if (rest.isNotEmpty() && rest[0].isDigit()) m.value else "${m.groupValues[1]}. $rest"
+        }
 
         result = loosenGluedMathOperators(result)
 

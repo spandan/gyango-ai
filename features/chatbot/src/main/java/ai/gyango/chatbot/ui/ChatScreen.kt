@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Biotech
@@ -55,7 +58,6 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Star
-import ai.gyango.api.prompts.ChatLessonPromptSpecs
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -120,13 +122,6 @@ import ai.gyango.chatbot.ui.theme.AssistantMessageBgDark
 import ai.gyango.chatbot.ui.theme.UserMessageBg
 import ai.gyango.chatbot.ui.theme.UserMessageBgDark
 
-
-/** BCP 47 tags shown in settings for the system speech recognizer (Telugu default). */
-private val SPEECH_INPUT_LOCALES: List<Pair<String, String>> = listOf(
-    "en-US" to "English",
-    "hi-IN" to "Hindi",
-    "te-IN" to "Telugu",
-)
 
 private val PresenceGreen = Color(0xFF43A047)
 
@@ -267,7 +262,7 @@ fun ChatScreen(
     isListeningToMic: Boolean = false,
     chatInputMode: ChatInputMode = ChatInputMode.TextAndVoice,
     onChatInputModeChange: (ChatInputMode) -> Unit = {},
-    onSend: (String) -> Unit,
+    onSend: (String, fromSparkChip: Boolean) -> Unit,
     onSettingsChanged: (InferenceSettings) -> Unit,
     onClearChat: () -> Unit = {},
     onTakePicture: () -> Unit = {},
@@ -362,40 +357,69 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    when (chatInputMode) {
-                        ChatInputMode.VoicePrimary -> {
-                            IconButton(
-                                onClick = { onChatInputModeChange(ChatInputMode.TextAndVoice) }
-                            ) {
-                                Icon(
-                                    Icons.Default.Keyboard,
-                                    contentDescription = displayStrings.chatToolbarSwitchToTypeLabel,
-                                    tint = MaterialTheme.colorScheme.onPrimary
-                                )
+                    Box {
+                        when (chatInputMode) {
+                            ChatInputMode.VoicePrimary -> {
+                                IconButton(
+                                    onClick = { onChatInputModeChange(ChatInputMode.TextAndVoice) },
+                                ) {
+                                    Icon(
+                                        Icons.Default.Keyboard,
+                                        contentDescription = displayStrings.chatToolbarSwitchToTypeLabel,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
                             }
-                        }
-                        ChatInputMode.TextAndVoice -> {
-                            IconButton(
-                                onClick = { onChatInputModeChange(ChatInputMode.VoicePrimary) }
-                            ) {
-                                Icon(
-                                    Icons.Default.Mic,
-                                    contentDescription = displayStrings.chatToolbarSwitchToVoiceLabel,
-                                    tint = MaterialTheme.colorScheme.onPrimary
-                                )
+                            ChatInputMode.TextAndVoice -> {
+                                IconButton(
+                                    onClick = { onChatInputModeChange(ChatInputMode.VoicePrimary) },
+                                ) {
+                                    Icon(
+                                        Icons.Default.Mic,
+                                        contentDescription = displayStrings.chatToolbarSwitchToVoiceLabel,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
                             }
                         }
                     }
                     IconButton(
-                        onClick = onClearChat,
-                        enabled = messages.isNotEmpty() && !isGenerating
+                        onClick = {
+                            val enable = !settings.assistantSpeechEnabled
+                            if (enable) onReadAloudYesSelected(settings.speechInputLocaleTag)
+                            onSettingsChanged(settings.copy(assistantSpeechEnabled = enable))
+                        },
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = displayStrings.chatToolbarClearLabel)
+                        Icon(
+                            imageVector = if (settings.assistantSpeechEnabled) {
+                                Icons.AutoMirrored.Filled.VolumeUp
+                            } else {
+                                Icons.AutoMirrored.Filled.VolumeOff
+                            },
+                            contentDescription = if (settings.assistantSpeechEnabled) {
+                                displayStrings.chatToolbarReadAloudTurnOffDescription
+                            } else {
+                                displayStrings.chatToolbarReadAloudTurnOnDescription
+                            },
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                        )
                     }
-                    IconButton(onClick = onFeedbackClick) {
-                        Icon(Icons.Default.Email, contentDescription = displayStrings.chatToolbarFeedbackLabel)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        IconButton(
+                            onClick = onClearChat,
+                            enabled = messages.isNotEmpty() && !isGenerating,
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = displayStrings.chatToolbarClearLabel)
+                        }
+                        IconButton(onClick = onFeedbackClick) {
+                            Icon(Icons.Default.Email, contentDescription = displayStrings.chatToolbarFeedbackLabel)
+                        }
                     }
-                    IconButton(onClick = { settingsPage = ChatSettingsPage.Hub }) {
+                    IconButton(
+                        onClick = { settingsPage = ChatSettingsPage.Hub },
+                    ) {
                         Icon(Icons.Default.Settings, contentDescription = displayStrings.chatToolbarSettingsLabel)
                     }
                 }
@@ -423,6 +447,7 @@ fun ChatScreen(
                 settings = settings,
                 onSettingsChanged = onSettingsChanged,
                 enabled = !isGenerating,
+                anchorModifier = Modifier,
             )
             MessagesList(
                 messages = messages,
@@ -431,10 +456,12 @@ fun ChatScreen(
                 modelLoadError = modelLoadError,
                 onRetryModelLoad = onRetryModelLoad,
                 chatInputMode = chatInputMode,
+                // Streaming placeholder (dots + hints) while the model writes; independent of prompt thought hints.
+                showThoughtProcess = true,
                 displayStrings = displayStrings,
                 onSparkChipSend = { text ->
                     inputText = ""
-                    onSend(text)
+                    onSend(text, true)
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -442,6 +469,7 @@ fun ChatScreen(
             )
 
             Surface(
+                modifier = Modifier.imePadding(),
                 tonalElevation = 0.dp,
                 shadowElevation = 4.dp,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
@@ -580,7 +608,7 @@ fun ChatScreen(
                                 onClick = {
                                     val text = inputText.trim()
                                     if (text.isNotEmpty()) {
-                                        onSend(text)
+                                        onSend(text, false)
                                         inputText = ""
                                     }
                                 },
@@ -653,9 +681,10 @@ private fun SubjectModeTileRow(
     settings: InferenceSettings,
     onSettingsChanged: (InferenceSettings) -> Unit,
     enabled: Boolean,
+    anchorModifier: Modifier = Modifier,
 ) {
     LazyRow(
-        modifier = Modifier
+        modifier = anchorModifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -703,6 +732,7 @@ private fun MessagesList(
     modelLoadError: String? = null,
     onRetryModelLoad: () -> Unit = {},
     chatInputMode: ChatInputMode = ChatInputMode.TextAndVoice,
+    showThoughtProcess: Boolean = true,
     displayStrings: ChatDisplayStrings,
     onSparkChipSend: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -899,6 +929,7 @@ private fun MessagesList(
                     showTypingPlaceholder = false,
                     loadingModelPlaceholder = false,
                     showLivePresence = isGenerating && isLast && message.sender == Sender.ASSISTANT,
+                    showThoughtProcess = showThoughtProcess,
                     loadingModelMessage = displayStrings.loadingModelMessage,
                     jsonStreamingPlaceholder = displayStrings.assistantJsonStreamingPlaceholder,
                     awaitingStreamHints = displayStrings.assistantAwaitingStreamHints,
@@ -917,6 +948,7 @@ private fun MessageBubble(
     showTypingPlaceholder: Boolean = false,
     loadingModelPlaceholder: Boolean = false,
     showLivePresence: Boolean = false,
+    showThoughtProcess: Boolean = true,
     loadingModelMessage: String = "Getting the model ready — one moment.",
     jsonStreamingPlaceholder: String = "Thinking…",
     awaitingStreamHints: List<String> = emptyList(),
@@ -975,6 +1007,7 @@ private fun MessageBubble(
                         textColor = textColor,
                         parsedSparksCsv = message.outputSparksCsv,
                         streamInProgress = showLivePresence,
+                        showThoughtProcess = showThoughtProcess,
                         jsonStreamingPlaceholder = jsonStreamingPlaceholder,
                         awaitingStreamHints = awaitingStreamHints,
                         onSparkChipClick = onSparkChipSend,
@@ -1068,7 +1101,8 @@ private fun ChatSettingsOverlay(
     LaunchedEffect(settings.speechInputLocaleTag) {
         speechLocaleTag = settings.speechInputLocaleTag
     }
-    val locStrings = remember(speechLocaleTag) { chatDisplayStringsForLocale(speechLocaleTag) }
+    val context = LocalContext.current.applicationContext
+    val locStrings = remember(context, speechLocaleTag) { chatDisplayStringsForLocale(context, speechLocaleTag) }
     val appVersion = rememberAppVersionInfo()
 
     var profileFirst by remember { mutableStateOf(settings.userFirstName) }
@@ -1495,7 +1529,7 @@ private fun ChatSettingsOverlay(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                             )
-                            val localeLabel = SPEECH_INPUT_LOCALES.find { it.first == speechLocaleTag }?.second
+                            val localeLabel = SpeechInputLocales.OPTIONS.find { it.first == speechLocaleTag }?.second
                                 ?: "English"
                             Text(
                                 text = localeLabel,
@@ -1680,7 +1714,7 @@ private fun ChatSettingsOverlay(
                         }
 
                         ChatSettingsPage.SpeechLocale -> {
-                            SPEECH_INPUT_LOCALES.forEach { (tag, name) ->
+                            SpeechInputLocales.OPTIONS.forEach { (tag, name) ->
                                 TextButton(
                                     onClick = {
                                         speechLocaleTag = tag

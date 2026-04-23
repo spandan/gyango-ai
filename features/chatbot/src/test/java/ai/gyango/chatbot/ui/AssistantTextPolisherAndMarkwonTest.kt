@@ -1,0 +1,162 @@
+package ai.gyango.chatbot.ui
+
+import ai.gyango.assistant.AssistantOutput
+import ai.gyango.assistant.AssistantTextPolisher
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AssistantTextPolisherAndMarkwonTest {
+
+    @Test
+    fun polisher_stripsZeroWidthSpaceAndBidiMarks() {
+        val withZwsp = "word\u200Bnext"
+        assertEquals("wordnext", AssistantTextPolisher.polishDisplayText(withZwsp))
+
+        val withBidi = "x\u202Ey"
+        assertEquals("xy", AssistantTextPolisher.polishDisplayText(withBidi))
+    }
+
+    @Test
+    fun polisher_preservesEmojiZwjoiner() {
+        val emoji = "\uD83D\uDC68\u200D\uD83E\uDDBB" // man technologist
+        assertEquals(emoji, AssistantTextPolisher.polishDisplayText(emoji))
+    }
+
+    @Test
+    fun polishForMarkdown_preservesSingleDollarTex() {
+        val raw = "Energy \$E = mc^2\$ here."
+        val plain = AssistantTextPolisher.polishDisplayText(raw)
+        assertTrue("plain polish should flatten TeX", !plain.contains('$'))
+
+        val md = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(md.contains('$'))
+    }
+
+    @Test
+    fun stripInlineMarkdown_removesMarkdownLinks() {
+        val s = AssistantTextPolisher.stripInlineMarkdown("See [label](https://x.com) here.")
+        assertEquals("See label here.", s)
+    }
+
+    @Test
+    fun plainTextForAssistantSpeech_stripsMarkdownForTts() {
+        val md = "## Title\n**Bold** and `code`."
+        val plain = AssistantTextPolisher.plainTextForAssistantSpeech(md)
+        assertTrue(!plain.contains("#"))
+        assertTrue(!plain.contains("*"))
+        assertTrue(!plain.contains("`"))
+        assertTrue(plain.contains("Title"))
+        assertTrue(plain.contains("Bold"))
+    }
+
+    @Test
+    fun stripInlineMarkdown_removesImageLinks() {
+        val s = AssistantTextPolisher.stripInlineMarkdown("![alt text](https://x.com/a.png)")
+        assertEquals("alt text", s)
+    }
+
+    @Test
+    fun stripInlineMarkdown_removesAutolinkAngle() {
+        val s = AssistantTextPolisher.stripInlineMarkdown("Visit <https://example.com/path> today.")
+        assertEquals("Visit today.", s)
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_wrapsTexyContent() {
+        val s = normalizeSingleDollarLatexForJlMath("Formula $\\frac{1}{2}$ end.")
+        assertTrue(s.contains("$$"))
+        assertTrue(s.contains("\\frac{1}{2}"))
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_wrapsSimpleMathInline() {
+        val s = normalizeSingleDollarLatexForJlMath("Compute \$x+1\$ now.")
+        assertTrue(s.contains("\$\$x+1\$\$"))
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_leavesCurrencyAlone() {
+        val s = normalizeSingleDollarLatexForJlMath("Price is \$5 today.")
+        assertEquals("Price is \$5 today.", s)
+    }
+
+    @Test
+    fun polishForMarkdown_normalizesInlineFenceOpener() {
+        val raw = "```text Step 1: isolate x\nStep 2: divide by 2\n```"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("```text Step 1: isolate x"))
+        assertTrue(out.contains("Step 1: isolate x"))
+    }
+
+    @Test
+    fun polishForMarkdown_normalizesThematicPrefixBeforeFence() {
+        val raw = "***```text Step 1: isolate x\nStep 2: divide by 2\n```"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("***```text"))
+        assertTrue(out.contains("```text"))
+    }
+
+    @Test
+    fun polishForMarkdown_stripsPromptScaffoldEchoLines() {
+        val raw = """
+            [ACTIVATE: MATHEMATICAL_REASONING_ENGINE]
+            SESSION
+            TOPIC: MATH
+            This is the real answer body.
+            # TAIL
+            STATE >> Goal:[MATH]
+        """.trimIndent()
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("[ACTIVATE:"))
+        assertTrue(!out.contains("SESSION"))
+        assertTrue(!out.contains("TOPIC: MATH"))
+        assertTrue(!out.contains("# TAIL"))
+        assertTrue(out.contains("This is the real answer body."))
+    }
+
+    @Test
+    fun polishForMarkdown_dropsDanglingDollarNoise() {
+        val raw = "Compute this: \$x + 2\$ then stray delimiter \$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$x + 2\$"))
+        assertTrue(!out.endsWith("delimiter \$"))
+    }
+
+    @Test
+    fun polishForMarkdown_stripsBareMangledExtTextNotOnlyAfterDollar() {
+        val raw = "Formula ext { H } _2 and gas ext{N}_2 (mangled \\\\text)."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue("should not show literal ext{…}", !out.contains("ext{"))
+        assertTrue("should not show spaced ext { … }", !Regex("""\bext\s*\{""").containsMatchIn(out))
+        assertTrue(out.contains("N")) // subscript path may emit Unicode; just ensure not raw ext brace
+    }
+
+    @Test
+    fun polishForMarkdown_stripsMangledExtAfterDollarWithSpaces() {
+        val raw = "Oxygen is \$ ext { O } _2\$ in formulas."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("ext{"))
+        assertTrue(!Regex("""\bext\s*\{""").containsMatchIn(out))
+    }
+
+    @Test
+    fun polishForMarkdown_doesNotStripContextWord() {
+        val raw = "Read the context{note} carefully — unrelated braces."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("context{note}"))
+    }
+
+    @Test
+    fun lessonPresentation_preservesBlockquoteMarkdown() {
+        val raw = """
+            > Use this quote as context.
+            ---
+            CONTEXT >> Quote explained for next turn
+            CURIOSITY >> English: quote writing
+            SPARKS >> Why this quote matters?||How would you rephrase it?||Rewrite in your own words?
+        """.trimIndent()
+        val lesson = AssistantOutput.lessonBubblePresentation(raw).joinedForPlainDisplay()
+        assertTrue(lesson.startsWith("> Use this quote as context."))
+    }
+}

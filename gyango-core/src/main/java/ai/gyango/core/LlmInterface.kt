@@ -166,4 +166,22 @@ data class InferenceSettings(
      * Capped in [ai.gyango.chatbot.data.ChatRepository]; never sent back to the model automatically in Phase 1.
      */
     val interestSignals: List<InterestSignal> = emptyList(),
+    /**
+     * Indices (0..3) of selected options for each starter check-in question; empty if skipped.
+     */
+    val starterCheckInAnswerIndices: List<Int> = emptyList(),
+    /**
+     * Difficulty level (1..10) for the current topic lane; resets to 1 when the subject tile changes.
+     * Increments when the learner follows a spark chip (capped at 10).
+     */
+    val chatDifficultyLevel: Int = 1,
+    /**
+     * [SubjectMode.name] or GENERAL for the lane [chatDifficultyLevel] applies to; used to reset on topic switch.
+     */
+    val chatDifficultyLaneKey: String? = null,
+    /**
+     * When true, heuristic routing picks the prompt topic from the user utterance (no extra LLM call).
+     * When false, [subjectMode] from the UI tile is used.
+     */
+    val autoRouteSubject: Boolean = true,
 )

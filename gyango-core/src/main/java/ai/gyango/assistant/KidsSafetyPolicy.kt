@@ -64,6 +64,16 @@ object KidsSafetyPolicy {
                 Regex("""\bsteal\b|\bshoplift\b|\bcheat on (a )?test\b|\bhack\b|\bskip school\b|\blie to my teacher\b""", RegexOption.IGNORE_CASE),
             ),
         ),
+        Rule(
+            category = "sensitive_information",
+            decision = SafetyDecision.BLOCK,
+            patterns = listOf(
+                Regex("""[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}""", RegexOption.IGNORE_CASE),
+                Regex("""\b(?:phone|mobile|contact|whatsapp|call(?: me)? at)\b[^\n]{0,24}(?:\+?\d[\d\-\s]{8,}\d)\b""", RegexOption.IGNORE_CASE),
+                Regex("""\b(?:password|passcode|otp|one[- ]time password|cvv|pin)\b\s*(?:is|:)\s*[A-Za-z0-9@#%$!_-]{3,}\b""", RegexOption.IGNORE_CASE),
+                Regex("""\b(?:aadhaar|aadhar|ssn|social security|bank account|account number|upi id)\b""", RegexOption.IGNORE_CASE),
+            ),
+        ),
     )
 
     fun screenInput(
@@ -105,6 +115,8 @@ object KidsSafetyPolicy {
             "I can't help keep risky secrets from trusted adults. If something feels confusing or unsafe, please talk to a parent, guardian, teacher, or another trusted adult."
         "crime_cheating" ->
             "I can't help with cheating, stealing, or tricking adults. I can help you solve the problem in a safe and honest way instead."
+        "sensitive_information" ->
+            "I can't share private or sensitive personal details here. Please remove personal info and ask your learning question again."
         else ->
             "I want to keep this safe for kids. Let's switch to a safer question, or ask a trusted adult if this is important."
     }

@@ -15,10 +15,15 @@ android {
     /** Same switch as app module: `-Pgyango.verboseLogs=true` */
     val verboseDebugLogs =
         project.findProperty("gyango.verboseLogs")?.toString()?.equals("true", ignoreCase = true) == true
+    /** Full LLM request/response payload logs (off by default). */
+    val llmIoLogs =
+        project.findProperty("gyango.llmIoLogs")?.toString()?.equals("true", ignoreCase = true) == true
 
     defaultConfig {
         minSdk = 28
         buildConfigField("boolean", "VERBOSE_DEBUG_LOGS", "$verboseDebugLogs")
+        buildConfigField("boolean", "LLM_IO_LOGS", "$llmIoLogs")
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     compileOptions {
@@ -63,4 +68,16 @@ dependencies {
 
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    val markwonVersion = "4.6.2"
+    implementation("io.noties.markwon:core:$markwonVersion")
+    implementation("io.noties.markwon:inline-parser:$markwonVersion")
+    implementation("io.noties.markwon:ext-latex:$markwonVersion")
+    implementation("io.noties.markwon:ext-strikethrough:$markwonVersion")
+    implementation("io.noties.markwon:ext-tables:$markwonVersion")
+    implementation("io.noties.markwon:linkify:$markwonVersion")
+    implementation("io.noties.markwon:image-coil:$markwonVersion")
+    implementation("io.coil-kt:coil:2.6.0")
+
+    testImplementation("junit:junit:4.13.2")
 }

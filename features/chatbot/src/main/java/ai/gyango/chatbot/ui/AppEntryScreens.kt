@@ -48,12 +48,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-private val ProfileSpeechLocales: List<Pair<String, String>> = listOf(
-    "en-US" to "English",
-    "hi-IN" to "Hindi",
-    "te-IN" to "Telugu",
-)
-
 @Composable
 private fun rememberEntryLogo(): ImageBitmap? {
     val context = LocalContext.current
@@ -361,7 +355,7 @@ fun ProfileOnboardingScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ProfileSpeechLocales.forEach { (tag, name) ->
+                        SpeechInputLocales.OPTIONS.forEach { (tag, name) ->
                             FilterChip(
                                 selected = speechLocaleTag == tag,
                                 onClick = { speechLocaleTag = tag },

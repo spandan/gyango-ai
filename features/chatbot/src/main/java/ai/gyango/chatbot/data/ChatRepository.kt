@@ -22,6 +22,8 @@ private val Context.chatDataStore by preferencesDataStore(name = "gyango_ai_chat
 
 class ChatRepository(private val context: Context) {
 
+    private val turnTelemetryStore = TurnTelemetryStore(context)
+
     companion object {
         private val KEY_HISTORY = stringPreferencesKey("history")
         private val KEY_INFERENCE_SETTINGS = stringPreferencesKey("inference_settings")
@@ -67,7 +69,18 @@ class ChatRepository(private val context: Context) {
      * Coerce speech locale, TTS language/gender, and keep stored data consistent.
      */
     private fun normalizeInferenceSettings(settings: InferenceSettings): InferenceSettings {
-        val allowed = setOf("te-IN", "hi-IN", "en-US")
+        val allowed = setOf(
+            "en-US",
+            "hi-IN",
+            "te-IN",
+            "mr-IN",
+            "ta-IN",
+            "bn-IN",
+            "gu-IN",
+            "kn-IN",
+            "ml-IN",
+            "pa-IN",
+        )
         val speech = if (settings.speechInputLocaleTag in allowed) settings.speechInputLocaleTag else "en-US"
         val thisYear = Year.now().value
         val normalizedBirthMonth = settings.birthMonth?.takeIf { it in 1..12 }
@@ -108,6 +121,12 @@ class ChatRepository(private val context: Context) {
                 .filter { it.areaOfInterest.isNotBlank() }
                 .toList()
                 .takeLast(INTEREST_SIGNALS_CAP),
+            starterCheckInAnswerIndices = settings.starterCheckInAnswerIndices
+                .map { it.coerceIn(0, 3) }
+                .take(16),
+            chatDifficultyLevel = settings.chatDifficultyLevel.coerceIn(1, 10),
+            chatDifficultyLaneKey = settings.chatDifficultyLaneKey?.trim()?.take(32),
+            autoRouteSubject = settings.autoRouteSubject,
         )
     }
 
@@ -128,6 +147,28 @@ class ChatRepository(private val context: Context) {
         val encoded = json.encodeToString(InferenceSettings.serializer(), settings)
         context.chatDataStore.edit { prefs ->
             prefs[KEY_INFERENCE_SETTINGS] = encoded
+        }
+    }
+
+    suspend fun recordTurnTelemetry(
+        subjectKey: String,
+        userQuestion: String,
+        curiosity: String?,
+        difficultyLevel: Int,
+        parseStatus: String?,
+        parseReason: String?,
+        topicContractValid: Boolean?,
+    ) {
+        runCatching {
+            turnTelemetryStore.insertTurn(
+                subjectKey = subjectKey,
+                userQuestion = userQuestion,
+                curiosity = curiosity,
+                difficultyLevel = difficultyLevel,
+                parseStatus = parseStatus,
+                parseReason = parseReason,
+                topicContractValid = topicContractValid,
+            )
         }
     }
 }

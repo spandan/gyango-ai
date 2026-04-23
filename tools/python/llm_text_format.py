@@ -109,6 +109,7 @@ _RE_BOLD_STAR = re.compile(r"\*\*([^*]+)\*\*")
 _RE_UNDER = re.compile(r"__(?!_)([^_\n]+)(?<!_)__")
 _RE_LINK = re.compile(r"\[([^\]]+)]\([^)]+\)")
 _RE_ATX_HEADING = re.compile(r"^#{1,6}\s*", re.MULTILINE)
+# Digit lists: require whitespace after "N." (parity with Kotlin MessageTextFormatter.orderedLine).
 _RE_BULLET_LINE = re.compile(r"^(\s*)([-*•]|\d+\.)\s+")
 _RE_ITALIC_STAR = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
 

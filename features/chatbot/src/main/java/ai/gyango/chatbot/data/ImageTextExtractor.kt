@@ -18,7 +18,7 @@ object ImageTextExtractor {
     suspend fun extractFromUri(
         context: Context,
         uri: Uri,
-        maxChars: Int = 2500,
+        maxChars: Int = 5000,
     ): Result {
         return runCatching {
             val source = ImageDecoder.createSource(context.contentResolver, uri)
@@ -38,7 +38,7 @@ object ImageTextExtractor {
 
     suspend fun extractFromBitmap(
         bitmap: Bitmap,
-        maxChars: Int = 2500,
+        maxChars: Int = 5000,
     ): Result {
         return runCatching { extractText(bitmap, maxChars) }
             .getOrElse { e -> Result.Error(e.message ?: "Could not process that photo") }

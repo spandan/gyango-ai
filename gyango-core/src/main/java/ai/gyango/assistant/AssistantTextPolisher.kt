@@ -34,11 +34,34 @@ object AssistantTextPolisher {
 
     private val LANG_TAG_ONLY = Regex("^[A-Za-z0-9._+-]+$")
 
-    fun polishDisplayText(input: String): String {
+    /**
+     * Plain-text polish: same as [polishDisplayTextForMarkdown] but converts `$…$` math and LaTeX-lite
+     * fragments to Unicode/plain so a non-TeX renderer stays readable.
+     */
+    fun polishDisplayText(input: String): String = polishDisplayInternal(input, convertLatexToPlain = true)
+
+    /**
+     * Polish for a full markdown + LaTeX renderer (e.g. Markwon + JLatexMath): skips TeX-to-plain so
+     * `$…$`, `$$…$$`, and `\command{…}` survive for the renderer.
+     */
+    fun polishDisplayTextForMarkdown(input: String): String = polishDisplayInternal(input, convertLatexToPlain = false)
+
+    private fun polishDisplayInternal(input: String, convertLatexToPlain: Boolean): String {
         var s = input
         s = normalizeMarkdownUnicode(s)
         s = decodeLiteralNewlineEscapes(s)
-        s = latexLiteToPlain(s)
+        s = stripPromptScaffoldEcho(s)
+        // Models often emit `$ ext{...}` when `\text` loses its backslash; repair before `$...$` pairing.
+        s = transformOutsideFencedCodeBlocks(s, ::repairMangledDollarExtFragments)
+        // Same mangling appears without `$` (e.g. `ext { H } _2`); must run for markdown too — otherwise
+        // Markwon shows literal "ext{}" in bubbles.
+        s = transformOutsideFencedCodeBlocks(s, ::repairBareMangledTextFragments)
+        s = transformOutsideFencedCodeBlocks(s, ::stripDanglingDollarDelimiters)
+        if (convertLatexToPlain) {
+            s = latexLiteToPlain(s)
+            // Chemistry / LaTeX-lite outside $…$ (e.g. mangled `\text` → `ext{H}_2`) and stragglers after $ pass.
+            s = transformOutsideFencedCodeBlocks(s, ::simplifyLatexChunk)
+        }
         s = normalizeVisibleCharacters(s)
         s = dedupeRepeatedParagraphs(s)
         s = dedupeConsecutiveDuplicateLines(s)
@@ -47,12 +70,119 @@ object AssistantTextPolisher {
         s = fixTokenizedWordGlue(s)
         s = repairMalformedMarkdownFences(s)
         s = transformOutsideFencedCodeBlocks(s, ::fixMathAdjacentLetterDigitSpacing)
+        s = stripStandaloneScaffoldParagraphLabels(s)
+        s = trimTrailingUnmatchedBacktick(s)
         return s.trim()
     }
 
     /**
+     * Remove prompt-template scaffolding if the model accidentally echoes it into the visible lesson.
+     */
+    private fun stripPromptScaffoldEcho(text: String): String {
+        val lines = text.replace("\r\n", "\n").split('\n')
+        val out = lines.filterNot { line ->
+            val t = line.trim()
+            if (t.isEmpty()) return@filterNot false
+            t.matches(Regex("""^(?:[*_`>#-]+\s*)*(?:#\s*)?(MISSION|SESSION|FORMAT\s*\(STRICT\)|TAIL(?:\s*\(.*\))?)\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^\[(?:ACTIVATE|DOMAIN):[^\]]*]$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^TOPIC\s*:\s*(GENERAL|CURIOSITY|MATH|SCIENCE|PHYSICS|CHEMISTRY|BIOLOGY|CODING|WRITING|EXAM_PREP)\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^TOPIC_LANE\s*:\s*(GENERAL|SCIENCE|MATH|CODING|WRITING|CURIOSITY|EXAM_PREP|PHYSICS|CHEMISTRY|BIOLOGY)\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^AGE\s*:\s*\d+\s*\|\s*LANG\s*:.*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^MODE\s*:\s*(GENERIC|CHALLENGE|SUPPORTIVE|EASY_PACE|DEEPER|BALANCED).*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^PRIOR\s*:\s*.*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^CURRENT_DIFF\s*:\s*\d+\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^Safety:\s*.*Kids-Safe.*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^After lesson prose,\s*output.*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^Topic:\s*.+\|\s*Age:""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^Reply in\s+""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^Write the answer""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^After the answer""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^No other metadata""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^CONTEXT\s*>>\s*<one line""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^CURIOSITY\s*>>\s*<one line""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^SPARKS\s*>>\s*<""", RegexOption.IGNORE_CASE))
+        }
+        return out.joinToString("\n").replace(Regex("""\n{3,}"""), "\n\n")
+    }
+
+    /**
+     * Keep valid `$...$` / `$$...$$` spans but drop obvious orphan delimiters that become visible noise.
+     */
+    private fun stripDanglingDollarDelimiters(chunk: String): String {
+        val chars = chunk.toCharArray()
+        val unescapedDollarIdx = mutableListOf<Int>()
+        for (i in chars.indices) {
+            if (chars[i] != '$') continue
+            if (i > 0 && chars[i - 1] == '\\') continue
+            unescapedDollarIdx += i
+        }
+        if (unescapedDollarIdx.isEmpty()) return chunk
+        // If odd count, trim the last stray delimiter.
+        if (unescapedDollarIdx.size % 2 == 1) {
+            chars[unescapedDollarIdx.last()] = ' '
+        }
+        // Remove lines that are only stray delimiters/spaces.
+        return String(chars)
+            .replace(Regex("""(?m)^\s*\$+\s*$"""), "")
+            .replace(Regex("""\n{3,}"""), "\n\n")
+    }
+
+    /**
+     * Replace `$ ext{X}_2`-style fragments (mangled `$\text{...}`) with Unicode/plain output even when
+     * `$...$` pairing fails. Runs only outside fenced ``` blocks.
+     */
+    private fun repairMangledDollarExtFragments(chunk: String): String {
+        var t = chunk
+        var prev: String
+        do {
+            prev = t
+            t = Regex("""\$\s*ext\s*\{([^}]+)\}((?:_\{[^}]+\}|_[0-9A-Za-z+\-=()]+)?)""").replace(t) { m ->
+                simplifyLatexChunk("ext{${m.groupValues[1]}}" + m.groupValues[2])
+            }
+        } while (t != prev)
+        return t
+    }
+
+    /**
+     * Mangled `\text{…}` → `ext{…}` or `ext { … }` (LiteRT / tokenizers drop the backslash).
+     * Negative lookbehind avoids matching the `text` inside words like `context{`.
+     */
+    private val bareMangledTextFragment =
+        Regex("""(?<![A-Za-z\\])ext\s*\{([^}]*)\}((?:_\{[^}]+\}|_[0-9A-Za-z+\-=()]+)?)""")
+
+    private fun repairBareMangledTextFragments(chunk: String): String {
+        var t = chunk
+        var prev: String
+        do {
+            prev = t
+            t = bareMangledTextFragment.replace(t) { m ->
+                simplifyLatexChunk("ext{${m.groupValues[1]}}" + m.groupValues[2])
+            }
+        } while (t != prev)
+        return t
+    }
+
+    /** Removes lone lines "P1" / "P2" / "P3" (prompt scaffold echo). */
+    private fun stripStandaloneScaffoldParagraphLabels(text: String): String {
+        val lines = text.replace("\r\n", "\n").split('\n')
+        val out = lines.filterNot { line -> line.trim().matches(Regex("""(?i)^P[123]$""")) }
+        return out.joinToString("\n").replace(Regex("""\n{3,}"""), "\n\n")
+    }
+
+    /** Drop a single stray `` ` `` at EOF when backticks are unbalanced (common stream/model glitch). */
+    private fun trimTrailingUnmatchedBacktick(s: String): String {
+        var t = s.trimEnd()
+        if (t.isEmpty() || t.last() != '`') return t
+        val total = t.count { it == '`' }
+        if (total % 2 == 1) {
+            t = t.dropLast(1).trimEnd()
+        }
+        return t
+    }
+
+    /**
      * Models often glue "```" to prose or equations (e.g. "= 14```") so fences never parse; strip or
-     * split so [MessageTextFormatter] can treat real ``` lines as code blocks.
+     * split so markdown renderers (or parsers) can treat real ``` lines as fenced code.
      */
     private fun repairMalformedMarkdownFences(text: String): String {
         val nl = text.replace("\r\n", "\n")
@@ -62,23 +192,52 @@ object AssistantTextPolisher {
                 return@joinToString line
             }
             var u = line
+            // Sometimes thematic separators from prompts leak into the same line as fences (`***```text ...`).
+            u = u.replace(Regex("""^\s*(?:\*{3,}\s*)+```([A-Za-z0-9._+-]+)\s*$"""), "```$1")
+            u = u.replace(Regex("""^\s*(?:\*{3,}\s*)+```([A-Za-z0-9._+-]+)\s+(.+)$"""), "```$1\n$2")
+            u = u.replace(Regex("""^\s*(?:\*{3,}\s*)+```\s*$"""), "```")
+            u = u.replace(Regex("""^\s*(?:\*{3,}\s*)+```\s+(.+)$"""), "```\n$1")
+            // Normalize inline opening fence with content (` ```text Step 1`) into a valid fenced block opener.
+            u = u.replace(
+                Regex("""^\s*```([A-Za-z0-9._+-]+)\s+(.+?)\s*```+\s*$"""),
+                "```$1\n$2\n```",
+            )
+            u = u.replace(Regex("""^\s*```([A-Za-z0-9._+-]+)\s+(.+)$"""), "```$1\n$2")
+            u = u.replace(Regex("""^\s*```\s+(.+?)\s*```+\s*$"""), "```\n$1\n```")
+            u = u.replace(Regex("""^\s*```\s+(.+)$"""), "```\n$1")
             u = u.replace(Regex("""(?<!`)(?:```|`{4,})+\s*$"""), "")
             u = u.replace(Regex("""([^`\s])(?:```|`{4,})+"""), "$1\n")
             u
         }
     }
 
+    /**
+     * Converts markdown-tuned assistant bubble text to plain language for TTS or a lightweight
+     * streaming preview (avoids reading `#`, `*`, `$…$`, etc. aloud).
+     */
+    fun plainTextForAssistantSpeech(displayMarkdown: String): String {
+        val t = displayMarkdown.trim()
+        if (t.isEmpty()) return ""
+        val asPlain = polishDisplayText(t)
+        return stripInlineMarkdown(asPlain).trim()
+    }
+
     fun stripInlineMarkdown(input: String): String {
         var s = input
+        // Markdown links and images: keep visible label / alt text only.
+        s = s.replace(Regex("""!?\[([^\]]*)]\([^)]*\)"""), "$1")
+        s = s.replace(Regex("""<https?://[^>\s]+>"""), "")
         s = s.replace(Regex("""\*\*([^*]+)\*\*"""), "$1")
         s = s.replace(Regex("""\*([^*]+)\*"""), "$1")
         s = s.replace(Regex("""__([^_]+)__"""), "$1")
+        s = s.replace(Regex("""~~(.+?)~~"""), "$1")
         s = s.replace(Regex("""_([^_]+)_"""), "$1")
         s = s.replace(Regex("""`([^`]+)`"""), "$1")
         // Stray fence markers leaked into prose (polisher should already have fixed most).
         s = s.replace(Regex("""`{3,}"""), "")
         s = s.replace("`", "")
         s = s.replace(Regex("""(?m)^#{1,6}\s*"""), "")
+        s = s.replace(Regex(""" {2,}"""), " ")
         return s.trim()
     }
 
@@ -94,8 +253,10 @@ object AssistantTextPolisher {
     }
 
     private fun latexLiteToPlain(s: String): String =
-        Regex("""\$(.+?)\$""", RegexOption.DOT_MATCHES_ALL).replace(s) { m ->
-            simplifyLatexChunk(m.groupValues[1])
+        transformOutsideFencedCodeBlocks(s) { chunk ->
+            Regex("""\$(.+?)\$""", RegexOption.DOT_MATCHES_ALL).replace(chunk) { m ->
+                simplifyLatexChunk(m.groupValues[1])
+            }
         }
 
     private val digitToSubscript = mapOf(
@@ -116,10 +277,13 @@ object AssistantTextPolisher {
         s.map { ch -> digitToSuperscript[ch] ?: ch }.joinToString("")
 
     private fun simplifyLatexChunk(inner: String): String {
-        var t = inner
+        var t = inner.trimStart()
+        // LiteRT / sanitizers often drop the backslash before `\text{…}`, leaving `ext{H}_2` or `ext { H }`.
+        t = t.replace(Regex("""ext\s*\{([^}]*)\}""")) { it.groupValues[1] }
         t = t.replace(Regex("""\\frac\{([^}]*)\}\{([^}]*)\}"""), "($1)/($2)")
-        t = t.replace(Regex("""\\rightarrow"""), " -> ")
-        t = t.replace(Regex("""\\to\b"""), " -> ")
+        t = t.replace(Regex("""\\rightarrow"""), " → ")
+        t = t.replace(Regex("""\\to\b"""), " → ")
+        t = t.replace(Regex("""\\implies\b"""), " ⇒ ")
         t = t.replace(Regex("""\\text\{([^}]*)\}"""), "$1")
         t = t.replace(Regex("""\\mathrm\{([^}]*)\}"""), "$1")
         t = t.replace(Regex("""\\,"""), " ")
@@ -131,6 +295,8 @@ object AssistantTextPolisher {
         }
         t = Regex("""\^\{([^}]+)\}""").replace(t) { m -> mapToSuperscript(m.groupValues[1]) }
         t = Regex("""(?:^|(?<=[A-Za-z0-9\)]))\^([0-9]+)""").replace(t) { m -> mapToSuperscript(m.groupValues[1]) }
+        // Plain ASCII reaction arrows after TeX forms are normalized.
+        t = t.replace("->", " → ")
         t = t.replace(Regex("""\\"""), "")
         return t.trim()
     }
@@ -138,7 +304,7 @@ object AssistantTextPolisher {
     private fun normalizeVisibleCharacters(input: String): String {
         var s = input
         s = s.replace("…", "...")
-        s = s.replace("→", " -> ")
+        // Keep Unicode arrows (chemistry / math) readable; ASCII "->" is normalized earlier in LaTeX-lite.
         s = s.replace("•", "- ")
         s = s.replace("“", "\"").replace("”", "\"")
         s = s.replace("‘", "'").replace("’", "'")
@@ -147,6 +313,8 @@ object AssistantTextPolisher {
         s = s.replace("\\/", "/")
         s = s.replace(Regex("""\\([{}\[\]()$])"""), "$1")
         s = s.replace(Regex("""[\u0000-\u0008\u000B\u000C\u000E-\u001F]"""), "")
+        // Zero-width / bidi controls that leak from models or PDF paste. Omit U+200D (ZWJ) so emoji ZWJ sequences stay intact.
+        s = s.replace(Regex("""[\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069]"""), "")
         return s
     }
 

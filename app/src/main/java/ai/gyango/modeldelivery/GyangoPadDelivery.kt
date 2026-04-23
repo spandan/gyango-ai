@@ -16,20 +16,22 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Base LiteRT model delivered as five on-demand Play Asset packs (~500 MiB each),
- * fetched in order, then merged into app-internal storage for a single file path.
+ * Base LiteRT model delivered as five on-demand Play Asset packs (~500 MiB each).
  *
- * After each pack completes, its chunk bytes are appended to a single merge temp file under [filesDir], then
- * [AssetPackManager.removePack] runs for that pack. We never rely on five simultaneous [getPackLocation] paths
- * staying valid until a late merge (Play can invalidate earlier packs once later ones install). The temp file
- * is renamed to the final merged model when all packs are concatenated.
+ * **Download:** packs that are not yet readable are requested together with one [AssetPackManager.fetch] call so
+ * the Play Store can transfer them in parallel. Packs stay installed until the merged model file is valid, then
+ * [AssetPackManager.removePack] runs for all of them—interrupted runs resume without re-downloading finished packs.
+ *
+ * **Merge:** after every chunk is readable, bytes are concatenated in pack order into one temp file under
+ * [filesDir], then renamed to the final `.litertlm`. Peak disk is roughly **installed packs + merged file** until
+ * cleanup runs.
  *
  * The merged bundle lives under [Context.filesDir] (private app-internal storage). LiteRT's
  * XNNPack disk weight cache is written next to the model file, so keeping the model internal
@@ -112,9 +114,9 @@ object GyangoPadDelivery {
     }
 
     /**
-     * Ensures all packs are present (downloads on-demand packs in order), then concatenates
-     * chunk files. [onProgress] is overall 0..1 (~92% download, merge to 1).
-     * [onPackDetail]: one-based pack index while downloading; [merging]=true during file assembly.
+     * Ensures all packs are present (parallel fetch via Play for packs not yet readable), then concatenates
+     * chunk files and only then removes PAD packs. [onProgress] is overall 0..1 (~88% download, merge, finalize).
+     * [onPackDetail]: `merging=false` during download; `merging=true` during file assembly.
      */
     suspend fun ensureChunksFetchedAndMerged(
         context: Context,
@@ -140,29 +142,30 @@ object GyangoPadDelivery {
                     onProgress(1f)
                     return@withContext
                 }
-                if (tmp.exists()) {
+
+                val packCount = PACK_NAMES.size
+                onPackDetail(0, false)
+                awaitAllPacksDownloadedAndReadable(manager) { download01 ->
+                    onProgress((download01 * 0.88f).coerceIn(0f, 0.88f))
+                }
+
+                if (tmp.exists() && !isCompleteMergedLength(tmp.length())) {
                     tmp.delete()
                 }
 
-                val packCount = PACK_NAMES.size
+                onPackDetail(0, true)
                 for ((index, pack) in PACK_NAMES.withIndex()) {
-                    onPackDetail(index + 1, false)
-                    val chunkSource = fetchPackWithProgress(
-                        manager = manager,
-                        packName = pack,
-                        packIndex0 = index,
-                        packCount = packCount,
-                        onProgress = { packFraction ->
-                            val overall = (index + packFraction) / packCount * 0.92f
-                            onProgress(overall)
-                        },
-                    )
+                    val chunkRel = chunkAssetRelativeForPackIndex(index)
+                    val chunkSource =
+                        resolveReadableChunkSource(manager, pack, chunkRel)
+                            ?: throw IllegalStateException(
+                                "PAD pack \"$pack\" was readable before merge but not during merge (chunk=$chunkRel)",
+                            )
                     appendPackChunkToMergeTmp(appCtx, chunkSource, packIndex = index)
-                    removeSinglePackBestEffort(manager, pack)
+                    onProgress((0.88f + (index + 1).toFloat() / packCount * 0.10f).coerceIn(0f, 0.98f))
                 }
 
-                onPackDetail(0, true)
-                onProgress(0.94f)
+                onProgress(0.98f)
                 finalizeMergeTmpToOutFile(appCtx, manager)
                 onProgress(1f)
             }
@@ -188,76 +191,95 @@ object GyangoPadDelivery {
     }
 
     /**
-     * Registers a pack download with Play, then blocks until [AssetPackStatus.COMPLETED] and chunk bytes are readable.
+     * Fetches every pack that is not yet readable in one [AssetPackManager.fetch] (Play may download in parallel),
+     * then blocks until each chunk path is available. Packs already complete from a prior run are left alone.
      *
-     * Uses [AssetPackManager.registerListener] for progress instead of polling [AssetPackManager.getPackStates] in a
-     * tight loop. Frequent `getPackStates` calls correlate with Play Store (`Finsky`) spamming `requestDownloadInfo()`
-     * in logcat while PAD runs.
-     *
-     * After [AssetPackStatus.COMPLETED], [AssetPackManager.getPackLocation] can lag; we poll slowly with
-     * [resolveReadableChunkSource] only until paths or [AssetPackManager.getAssetLocation] become available.
+     * Uses [AssetPackManager.registerListener] for progress; [getPackStates] only on idle ticks to limit Finsky
+     * log noise. After [AssetPackStatus.COMPLETED], [resolveReadableChunkSource] can lag—same slow readiness as
+     * single-pack flow.
      */
-    private suspend fun fetchPackWithProgress(
+    private suspend fun awaitAllPacksDownloadedAndReadable(
         manager: AssetPackManager,
-        packName: String,
-        packIndex0: Int,
-        packCount: Int,
-        onProgress: suspend (Float) -> Unit,
-    ): PadChunkSource {
-        val chunkRel = chunkAssetRelativeForPackIndex(packIndex0)
-        manager.fetch(listOf(packName)).await()
-
+        onDownloadProgress: suspend (Float) -> Unit,
+    ) {
         val updates = Channel<AssetPackState>(Channel.UNLIMITED)
         val listener = AssetPackStateUpdateListener { st ->
-            if (st.name() == packName) {
+            if (PACK_NAMES.contains(st.name())) {
                 updates.trySend(st)
             }
         }
         manager.registerListener(listener)
         try {
-            val initial = manager.getPackStates(listOf(packName)).await().packStates()[packName]
-                ?: throw IllegalStateException("PAD pack \"$packName\": no state from Play after fetch")
-            updates.trySend(initial)
+            fun readableSource(i: Int): PadChunkSource? =
+                resolveReadableChunkSource(
+                    manager,
+                    PACK_NAMES[i],
+                    chunkAssetRelativeForPackIndex(i),
+                )
 
-            while (true) {
-                val st = updates.receive()
-                onProgress(packFractionFromState(st))
-                when (st.status()) {
-                    AssetPackStatus.FAILED -> {
-                        val code = st.errorCode()
-                        throw IllegalStateException("PAD pack \"$packName\" download failed (Play errorCode=$code)")
-                    }
-                    AssetPackStatus.CANCELED ->
-                        throw IllegalStateException("PAD pack \"$packName\" download was canceled")
-                    AssetPackStatus.COMPLETED -> {
-                        var source = resolveReadableChunkSource(manager, packName, chunkRel)
-                        if (source != null) {
-                            onProgress(1f)
-                            if (BuildConfig.VERBOSE_DEBUG_LOGS) {
-                                Log.d(TAG, "PAD fetch done: $packName (${packIndex0 + 1}/$packCount)")
-                            }
-                            return source
+            fun allReadable(): Boolean = PACK_NAMES.indices.all { readableSource(it) != null }
+
+            suspend fun refreshStates(): Map<String, AssetPackState> =
+                manager.getPackStates(PACK_NAMES).await().packStates()
+
+            var states = refreshStates()
+            for (name in PACK_NAMES) {
+                states[name]
+                    ?: throw IllegalStateException("PAD pack \"$name\": no state from Play")
+            }
+
+            val notReadableNames =
+                PACK_NAMES.filterIndexed { index, _ -> readableSource(index) == null }
+            if (notReadableNames.isNotEmpty()) {
+                manager.fetch(notReadableNames).await()
+                states = refreshStates()
+            }
+
+            suspend fun emitProgress() {
+                var sum = 0f
+                for (i in PACK_NAMES.indices) {
+                    sum +=
+                        if (readableSource(i) != null) {
+                            1f
+                        } else {
+                            states[PACK_NAMES[i]]?.let { packFractionFromState(it) } ?: 0f
                         }
-                        var completedWaitMs = 0L
-                        while (completedWaitMs < 90_000L) {
-                            delay(500L)
-                            completedWaitMs += 500L
-                            source = resolveReadableChunkSource(manager, packName, chunkRel)
-                            if (source != null) {
-                                onProgress(1f)
-                                if (BuildConfig.VERBOSE_DEBUG_LOGS) {
-                                    Log.d(TAG, "PAD fetch done: $packName (${packIndex0 + 1}/$packCount)")
-                                }
-                                return source
-                            }
-                        }
-                        throw IllegalStateException(
-                            "PAD pack \"$packName\" reached COMPLETED but chunk is not readable yet " +
-                                "(no filesystem path and no APK asset mapping from Play; waited ${completedWaitMs}ms)",
-                        )
-                    }
-                    else -> Unit
                 }
+                onDownloadProgress((sum / PACK_NAMES.size).coerceIn(0f, 1f))
+            }
+
+            emitProgress()
+            if (allReadable()) return
+
+            var idleTicks = 0
+            val deadlineMs = System.currentTimeMillis() + 6L * 60L * 60L * 1000L
+            while (!allReadable()) {
+                if (System.currentTimeMillis() > deadlineMs) {
+                    throw IllegalStateException("PAD download timed out waiting for all packs to become readable")
+                }
+                val ev = withTimeoutOrNull(750L) { updates.receive() }
+                if (ev != null) {
+                    idleTicks = 0
+                    states = states.toMutableMap().apply { put(ev.name(), ev) }
+                    when (ev.status()) {
+                        AssetPackStatus.FAILED ->
+                            throw IllegalStateException(
+                                "PAD pack \"${ev.name()}\" download failed (Play errorCode=${ev.errorCode()})",
+                            )
+                        AssetPackStatus.CANCELED ->
+                            throw IllegalStateException("PAD pack \"${ev.name()}\" download was canceled")
+                        else -> Unit
+                    }
+                } else {
+                    idleTicks++
+                    if (idleTicks % 4 == 0) {
+                        states = refreshStates()
+                    }
+                }
+                emitProgress()
+            }
+            if (BuildConfig.VERBOSE_DEBUG_LOGS) {
+                Log.d(TAG, "PAD all packs readable (${PACK_NAMES.size})")
             }
         } finally {
             runCatching { manager.unregisterListener(listener) }
@@ -355,18 +377,6 @@ object GyangoPadDelivery {
         }
     }
 
-    private suspend fun removeSinglePackBestEffort(manager: AssetPackManager, packName: String) {
-        if (pickPackLocation(manager, packName) == null) return
-        runCatching {
-            manager.removePack(packName).await()
-            if (BuildConfig.VERBOSE_DEBUG_LOGS) {
-                Log.i(TAG, "Removed PAD pack after merge append: $packName")
-            }
-        }.onFailure { e ->
-            Log.w(TAG, "removePack failed for $packName: ${e.message}")
-        }
-    }
-
     private fun packFractionFromState(st: AssetPackState): Float {
         val status = st.status()
         if (status == AssetPackStatus.COMPLETED) return 1f
@@ -424,5 +434,4 @@ object GyangoPadDelivery {
             }
         }
     }
-
 }

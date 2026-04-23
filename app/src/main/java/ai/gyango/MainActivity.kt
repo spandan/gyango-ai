@@ -30,7 +30,6 @@ import ai.gyango.chatbot.ui.BrainPreparingProgressScreen
 import ai.gyango.chatbot.ui.BrainWaitingForWifiScreen
 import ai.gyango.chatbot.ui.ChatInputMode
 import ai.gyango.chatbot.ui.ModelHardwareUnsupportedScreen
-import ai.gyango.chatbot.ui.PadFeatureWalkthroughScreen
 import ai.gyango.chatbot.ui.LearningCheckInPromptScreen
 import ai.gyango.chatbot.ui.LearningCheckInScreen
 import ai.gyango.chatbot.ui.OnboardingWelcomeScreen
@@ -47,6 +46,7 @@ import ai.gyango.chatbot.ui.ChatScreen
 import ai.gyango.chatbot.ui.ChatViewModel
 import ai.gyango.chatbot.ui.theme.GyangoAITheme
 import ai.gyango.chatbot.voice.SpeechTranscriber
+import ai.gyango.assistant.AssistantTextPolisher
 import ai.gyango.core.Sender
 import ai.gyango.core.hardware.ModelHardwareGate
 import ai.gyango.modeldelivery.GyangoPadDelivery
@@ -136,6 +136,7 @@ class MainActivity : ComponentActivity() {
     private fun startVoiceRecognition() {
         val vm = chatViewModel
         if (vm.isGenerating.value) return
+        stopAssistantSpeech()
         vm.clearVoiceError()
         vm.setListeningToMic(true)
         speechTranscriber.startListening(
@@ -172,8 +173,10 @@ class MainActivity : ComponentActivity() {
     private fun speakAssistantReply(reply: String, localeTag: String): Boolean {
         if (reply.isBlank()) return false
         if (ttsLanguageStatus(localeTag) != TtsLanguageStatus.READY) return false
+        val plain = AssistantTextPolisher.plainTextForAssistantSpeech(reply)
+        if (plain.isBlank()) return false
         val utteranceId = "assistant-${System.currentTimeMillis()}"
-        assistantTts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        assistantTts.speak(plain, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         return true
     }
 
@@ -288,33 +291,46 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
-                var padWalkthroughDismissed by rememberSaveable { mutableStateOf(false) }
-                val scope = rememberCoroutineScope()
-                val padBackgroundStatusHint = if (!BuildConfig.USE_PAD || padStep == PadBrainStep.Done) {
-                    null
-                } else {
-                    when (padStep) {
-                        PadBrainStep.Downloading -> {
-                            val percent = (padDownloadProgress * 100f).toInt().coerceIn(0, 100)
-                            val detail = padDownloadDetail?.takeIf { it.isNotBlank() }
-                            if (detail != null) {
-                                "${entryStrings.onboardingPadDownloadingHint} ($percent%) • $detail"
-                            } else {
-                                "${entryStrings.onboardingPadDownloadingHint} ($percent%)"
-                            }
-                        }
-                        PadBrainStep.PickNetwork,
-                        PadBrainStep.WaitWifi,
-                        -> entryStrings.onboardingPadWaitingHint
-                        PadBrainStep.Done -> null
-                    }
+                /**
+                 * Once true, profile/onboarding may proceed while PAD merge runs in the background.
+                 * False only for the pre-profile cellular / Wi‑Fi choice screens until the user commits or Wi‑Fi auto-starts.
+                 */
+                var padPreProfileNetworkStepComplete by rememberSaveable {
+                    mutableStateOf(!BuildConfig.USE_PAD || GyangoPadDelivery.isMergedModelReady(activity))
                 }
-                val showPadFeatureWalkthrough =
-                    BuildConfig.USE_PAD &&
-                        settingsState.voiceOnboardingComplete &&
-                        postDownloadStep == PostDownloadStep.Done &&
-                        padStep != PadBrainStep.Done &&
-                        !padWalkthroughDismissed
+                val scope = rememberCoroutineScope()
+                // PAD hint on profile / check-in when download is running or waiting on network (after pre-profile gate).
+                val padBackgroundStatusHint =
+                    if (
+                        !BuildConfig.USE_PAD ||
+                        padStep == PadBrainStep.Done ||
+                        !settingsState.voiceOnboardingComplete ||
+                        !padPreProfileNetworkStepComplete
+                    ) {
+                        null
+                    } else {
+                        when (padStep) {
+                            PadBrainStep.Downloading -> {
+                                val percent = (padDownloadProgress * 100f).toInt().coerceIn(0, 100)
+                                val detail = padDownloadDetail?.takeIf { it.isNotBlank() }
+                                if (detail != null) {
+                                    "${entryStrings.onboardingPadDownloadingHint} ($percent%) • $detail"
+                                } else {
+                                    "${entryStrings.onboardingPadDownloadingHint} ($percent%)"
+                                }
+                            }
+                            PadBrainStep.PickNetwork,
+                            PadBrainStep.WaitWifi,
+                            -> entryStrings.onboardingPadWaitingHint
+                            PadBrainStep.Done -> null
+                        }
+                    }
+                val postPersonaPadGateReady =
+                    settingsState.voiceOnboardingComplete &&
+                        postDownloadStep == PostDownloadStep.Done
+                /** PAD model still needed (on-disk merge not finished). */
+                val needsPadModelDownload =
+                    BuildConfig.USE_PAD && !GyangoPadDelivery.isMergedModelReady(activity)
 
                 LaunchedEffect(
                     settingsState.voiceOnboardingComplete,
@@ -359,6 +375,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(messagesState) {
+                    if (messagesState.isEmpty()) {
+                        stopAssistantSpeech()
+                        lastSpokenAssistantId = -1L
+                    }
+                }
+
                 LaunchedEffect(
                     messagesState,
                     generatingState,
@@ -383,6 +406,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun enqueuePadModelDownload() {
+                    // Show progress UI immediately; coroutine may schedule after this frame.
+                    padDownloadError = null
+                    padStep = PadBrainStep.Downloading
+                    padDownloadProgress = 0f
                     scope.launch {
                         if (!padDownloadMutex.tryLock()) {
                             if (BuildConfig.VERBOSE_DEBUG_LOGS) {
@@ -391,9 +418,6 @@ class MainActivity : ComponentActivity() {
                             return@launch
                         }
                         try {
-                            padDownloadError = null
-                            padStep = PadBrainStep.Downloading
-                            padDownloadProgress = 0f
                             runCatching {
                                 GyangoPadDelivery.ensureChunksFetchedAndMerged(
                                     activity,
@@ -408,9 +432,10 @@ class MainActivity : ComponentActivity() {
                                                 entryStrings.brainMergingDetail
                                             } else if (oneBased > 0) {
                                                 brainPackProgressDetail(
-                                                    settingsState.speechInputLocaleTag,
-                                                    oneBased,
-                                                    GyangoPadDelivery.PACK_NAMES.size,
+                                                    context = activity,
+                                                    localeTag = settingsState.speechInputLocaleTag,
+                                                    oneBased = oneBased,
+                                                    total = GyangoPadDelivery.PACK_NAMES.size,
                                                 )
                                             } else {
                                                 null
@@ -434,6 +459,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                /**
+                 * PAD: on Wi‑Fi, start merge in the background and allow profile immediately.
+                 * On cellular, keep [PadBrainStep.PickNetwork] until the user starts a download from the choice screen.
+                 * On next app open / resume, Wi‑Fi is checked again ([padResumeTick]) for users who chose “resume later”.
+                 */
                 LaunchedEffect(
                     padResumeTick,
                     padStep,
@@ -444,6 +474,7 @@ class MainActivity : ComponentActivity() {
                     if (GyangoPadDelivery.isMergedModelReady(activity)) {
                         padStep = PadBrainStep.Done
                         padOnboardingGateResolved = true
+                        padPreProfileNetworkStepComplete = true
                         return@LaunchedEffect
                     }
                     if (padStep == PadBrainStep.Downloading || padStep == PadBrainStep.Done) {
@@ -453,37 +484,26 @@ class MainActivity : ComponentActivity() {
                     when {
                         activity.isActiveNetworkWifi() -> {
                             padOnboardingGateResolved = true
-                            // Do not auto-retry while PickNetwork + error: that loops fetch(), Play throttles (-7),
-                            // and repeated Toasts hit the system limit (5). User uses Retry / Download on screen.
-                            when {
-                                padStep == PadBrainStep.WaitWifi -> {
-                                    padDownloadError = null
-                                    enqueuePadModelDownload()
-                                }
-                                padStep == PadBrainStep.PickNetwork && padDownloadError == null -> {
-                                    padDownloadError = null
-                                    enqueuePadModelDownload()
-                                }
-                                else -> Unit
+                            padPreProfileNetworkStepComplete = true
+                            padDownloadError = null
+                            if (padStep != PadBrainStep.Downloading && padStep != PadBrainStep.Done) {
+                                enqueuePadModelDownload()
                             }
                         }
-                        // Show cellular choice UI only when active network is cellular.
                         activity.isActiveNetworkCellular() && padStep != PadBrainStep.WaitWifi -> {
                             padStep = PadBrainStep.PickNetwork
                         }
-                        // No wifi/cellular: hold in wifi-waiting mode until next app open/resume check.
                         !activity.isActiveNetworkCellular() && padStep == PadBrainStep.PickNetwork && padDownloadError == null -> {
                             padOnboardingGateResolved = true
                             padStep = PadBrainStep.WaitWifi
                         }
                         else -> {
-                            // No active network. Do not block onboarding; resume PAD decisions later.
                             padOnboardingGateResolved = true
                         }
                     }
                 }
 
-                // GPU/NPU (and NNAPI) gate runs before profile and before any PAD download UI.
+                // GPU/NPU gate first; optional PAD network / Wi‑Fi wait (cellular only) before profile — Wi‑Fi starts download in background.
                 when {
                     !hardwareSupport.canRunSelectedModel -> {
                         if (BuildConfig.VERBOSE_DEBUG_LOGS) {
@@ -496,6 +516,45 @@ class MainActivity : ComponentActivity() {
                         }
                         ModelHardwareUnsupportedScreen(strings = entryStrings, support = hardwareSupport)
                     }
+                    needsPadModelDownload &&
+                        !padPreProfileNetworkStepComplete &&
+                        padStep == PadBrainStep.PickNetwork -> {
+                        BrainNetworkChoiceScreen(
+                            strings = entryStrings,
+                            lastDownloadError = padDownloadError,
+                            onContinueOnWifi = {
+                                padDownloadError = null
+                                padStep = PadBrainStep.WaitWifi
+                            },
+                            onDownloadNow = {
+                                padDownloadError = null
+                                padPreProfileNetworkStepComplete = true
+                                enqueuePadModelDownload()
+                            },
+                            onRetryAfterFailure = {
+                                padDownloadError = null
+                                padPreProfileNetworkStepComplete = true
+                                enqueuePadModelDownload()
+                            },
+                        )
+                    }
+                    needsPadModelDownload &&
+                        !padPreProfileNetworkStepComplete &&
+                        padStep == PadBrainStep.WaitWifi -> {
+                        BrainWaitingForWifiScreen(
+                            strings = entryStrings,
+                            onContinueDownloadNow = {
+                                padDownloadError = null
+                                padPreProfileNetworkStepComplete = true
+                                enqueuePadModelDownload()
+                            },
+                            onResumeLater = {
+                                padDownloadError = null
+                                padStep = PadBrainStep.WaitWifi
+                                padPreProfileNetworkStepComplete = true
+                            },
+                        )
+                    }
                     !settingsState.voiceOnboardingComplete -> {
                         if (!settingsState.onboardingWelcomeSeen) {
                             OnboardingWelcomeScreen(
@@ -504,31 +563,6 @@ class MainActivity : ComponentActivity() {
                                     chatViewModel.updateSettings(
                                         settingsState.copy(onboardingWelcomeSeen = true),
                                     )
-                                },
-                            )
-                        } else if (
-                            BuildConfig.USE_PAD &&
-                            !GyangoPadDelivery.isMergedModelReady(activity) &&
-                            !padOnboardingGateResolved &&
-                            padStep == PadBrainStep.PickNetwork
-                        ) {
-                            BrainNetworkChoiceScreen(
-                                strings = entryStrings,
-                                lastDownloadError = padDownloadError,
-                                onContinueOnWifi = {
-                                    padDownloadError = null
-                                    padOnboardingGateResolved = true
-                                    padStep = PadBrainStep.WaitWifi
-                                },
-                                onDownloadNow = {
-                                    padDownloadError = null
-                                    padOnboardingGateResolved = true
-                                    enqueuePadModelDownload()
-                                },
-                                onRetryAfterFailure = {
-                                    padDownloadError = null
-                                    padOnboardingGateResolved = true
-                                    enqueuePadModelDownload()
                                 },
                             )
                         } else {
@@ -597,16 +631,54 @@ class MainActivity : ComponentActivity() {
                         )
                         return@GyangoAITheme
                     }
-                    showPadFeatureWalkthrough -> {
-                        PadFeatureWalkthroughScreen(
-                            localeTag = settingsState.speechInputLocaleTag,
-                            statusHint = padBackgroundStatusHint,
-                            onDone = { padWalkthroughDismissed = true },
-                            onSkip = { padWalkthroughDismissed = true },
+                    needsPadModelDownload &&
+                        postPersonaPadGateReady &&
+                        padStep == PadBrainStep.Downloading -> {
+                        BrainPreparingProgressScreen(
+                            strings = entryStrings,
+                            progress = padDownloadProgress,
+                            packDetail = padDownloadDetail,
                         )
-                        return@GyangoAITheme
                     }
-                    !BuildConfig.USE_PAD || padStep == PadBrainStep.Done -> {
+                    needsPadModelDownload &&
+                        postPersonaPadGateReady &&
+                        padPreProfileNetworkStepComplete &&
+                        padStep == PadBrainStep.PickNetwork -> {
+                        BrainNetworkChoiceScreen(
+                            strings = entryStrings,
+                            lastDownloadError = padDownloadError,
+                            onContinueOnWifi = {
+                                padDownloadError = null
+                                padStep = PadBrainStep.WaitWifi
+                            },
+                            onDownloadNow = {
+                                padDownloadError = null
+                                enqueuePadModelDownload()
+                            },
+                            onRetryAfterFailure = {
+                                padDownloadError = null
+                                enqueuePadModelDownload()
+                            },
+                        )
+                    }
+                    needsPadModelDownload &&
+                        postPersonaPadGateReady &&
+                        padPreProfileNetworkStepComplete &&
+                        padStep == PadBrainStep.WaitWifi -> {
+                        BrainWaitingForWifiScreen(
+                            strings = entryStrings,
+                            onContinueDownloadNow = {
+                                padDownloadError = null
+                                enqueuePadModelDownload()
+                            },
+                            onResumeLater = {
+                                padDownloadError = null
+                                padStep = PadBrainStep.WaitWifi
+                            },
+                        )
+                    }
+                    (!BuildConfig.USE_PAD || GyangoPadDelivery.isMergedModelReady(activity)) &&
+                        postPersonaPadGateReady -> {
                         var chatInputMode by rememberSaveable { mutableStateOf(ChatInputMode.TextAndVoice.name) }
                         val mode = remember(chatInputMode) {
                             runCatching { ChatInputMode.valueOf(chatInputMode) }
@@ -633,9 +705,9 @@ class MainActivity : ComponentActivity() {
                                 onChatInputModeChange = { chatInputMode = it.name },
                                 documentError = documentError,
                                 onDismissDocumentError = { chatViewModel.clearDocumentError() },
-                                onSend = {
+                                onSend = { text, fromSparkChip ->
                                     stopAssistantSpeech()
-                                    chatViewModel.onUserSend(it)
+                                    chatViewModel.onUserSend(text, fromSparkChip)
                                 },
                                 onSettingsChanged = { chatViewModel.updateSettings(it) },
                                 onReadAloudYesSelected = { tag ->
@@ -643,7 +715,10 @@ class MainActivity : ComponentActivity() {
                                         launchAndroidTtsSetup()
                                     }
                                 },
-                                onClearChat = { chatViewModel.clearChat() },
+                                onClearChat = {
+                                    stopAssistantSpeech()
+                                    chatViewModel.clearChat()
+                                },
                                 onTakePicture = { cameraPreviewLauncher.launch(null) },
                                 onUploadImage = {
                                     imagePickerLauncher.launch(
@@ -683,44 +758,6 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = null
                             )
                         }
-                    }
-                    padStep == PadBrainStep.PickNetwork -> {
-                        BrainNetworkChoiceScreen(
-                            strings = entryStrings,
-                            lastDownloadError = padDownloadError,
-                            onContinueOnWifi = {
-                                padDownloadError = null
-                                padStep = PadBrainStep.WaitWifi
-                            },
-                            onDownloadNow = {
-                                padDownloadError = null
-                                enqueuePadModelDownload()
-                            },
-                            onRetryAfterFailure = {
-                                padDownloadError = null
-                                enqueuePadModelDownload()
-                            },
-                        )
-                    }
-                    padStep == PadBrainStep.WaitWifi -> {
-                        BrainWaitingForWifiScreen(
-                            strings = entryStrings,
-                            onContinueDownloadNow = {
-                                padDownloadError = null
-                                enqueuePadModelDownload()
-                            },
-                            onResumeLater = {
-                                padDownloadError = null
-                                padStep = PadBrainStep.PickNetwork
-                            },
-                        )
-                    }
-                    padStep == PadBrainStep.Downloading -> {
-                        BrainPreparingProgressScreen(
-                            strings = entryStrings,
-                            progress = padDownloadProgress,
-                            packDetail = padDownloadDetail,
-                        )
                     }
                 }
             }

@@ -12,6 +12,9 @@ android {
     /** Opt-in: `./gradlew ... -Pgyango.verboseLogs=true` — large logcat (prompts, perf, PAD noise). Default off for all flavors/buildTypes. */
     val verboseDebugLogs =
         project.findProperty("gyango.verboseLogs")?.toString()?.equals("true", ignoreCase = true) == true
+    /** Opt-in: `./gradlew ... -Pgyango.llmIoLogs=true` — full LLM request/response payload logs. */
+    val llmIoLogs =
+        project.findProperty("gyango.llmIoLogs")?.toString()?.equals("true", ignoreCase = true) == true
 
     /** Sum of `pad_chunk_*.bin` sizes; [GyangoPadDelivery] uses this to reject partial merges (tmp ≥512 MiB but missing last pack). */
     val padMergedExpectedBytes = (0..4).sumOf { i ->
@@ -32,6 +35,7 @@ android {
         buildConfigField("boolean", "USE_PAD", "false")
         buildConfigField("boolean", "FAKE_ENTITLEMENTS_UNLOCK_ALL", "false")
         buildConfigField("boolean", "VERBOSE_DEBUG_LOGS", "$verboseDebugLogs")
+        buildConfigField("boolean", "LLM_IO_LOGS", "$llmIoLogs")
         buildConfigField("long", "PAD_MERGED_MODEL_EXPECTED_BYTES", "${padMergedExpectedBytes}L")
     }
 
