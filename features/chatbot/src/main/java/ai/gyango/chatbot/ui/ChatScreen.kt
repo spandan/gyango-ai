@@ -9,7 +9,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +17,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
@@ -96,9 +98,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -109,16 +111,24 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.android.awaitFrame
 import java.util.Locale
+import ai.gyango.chatbot.ui.theme.LocalGyangoAppInDarkTheme
+import ai.gyango.core.AppThemeMode
 import ai.gyango.core.ChatMessage
 import ai.gyango.core.InferenceSettings
-import ai.gyango.core.ChatPreferenceMappings
 import ai.gyango.core.LlmDefaults
 import ai.gyango.core.Sender
 import ai.gyango.core.SubjectMode
+import ai.gyango.chatbot.security.AppPinStore
 import ai.gyango.chatbot.ui.theme.AssistantMessageBg
 import ai.gyango.chatbot.ui.theme.AssistantMessageBgDark
+import ai.gyango.chatbot.ui.theme.ChatAssistantBodyTextDark
+import ai.gyango.chatbot.ui.theme.ChatAssistantLinkDark
+import ai.gyango.chatbot.ui.theme.ChatAssistantLinkLight
+import ai.gyango.chatbot.ui.theme.ChatAssistantSecondaryDark
+import ai.gyango.chatbot.ui.theme.ChatUserBubbleTextDark
 import ai.gyango.chatbot.ui.theme.UserMessageBg
 import ai.gyango.chatbot.ui.theme.UserMessageBgDark
 
@@ -260,7 +270,7 @@ fun ChatScreen(
     onRetryModelLoad: () -> Unit = {},
     settings: InferenceSettings,
     isListeningToMic: Boolean = false,
-    chatInputMode: ChatInputMode = ChatInputMode.TextAndVoice,
+    chatInputMode: ChatInputMode = ChatInputMode.VoicePrimary,
     onChatInputModeChange: (ChatInputMode) -> Unit = {},
     onSend: (String, fromSparkChip: Boolean) -> Unit,
     onSettingsChanged: (InferenceSettings) -> Unit,
@@ -473,7 +483,7 @@ fun ChatScreen(
                 tonalElevation = 0.dp,
                 shadowElevation = 4.dp,
                 shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                color = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surface
+                color = if (LocalGyangoAppInDarkTheme.current) MaterialTheme.colorScheme.surface
                        else Color.White
             ) {
                 when (chatInputMode) {
@@ -490,7 +500,7 @@ fun ChatScreen(
                                 },
                                 enabled = !isGenerating && !inputBlockedUntilModelReady,
                                 modifier = Modifier
-                                    .size(104.dp)
+                                    .size(83.dp)
                                     .then(
                                         if (isListeningToMic) Modifier.alpha(0.95f) else Modifier
                                     ),
@@ -512,15 +522,15 @@ fun ChatScreen(
                             ) {
                                 if (isListeningToMic) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(44.dp),
-                                        strokeWidth = 3.dp,
+                                        modifier = Modifier.size(35.dp),
+                                        strokeWidth = 2.5.dp,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                 } else {
                                     Icon(
                                         Icons.Default.Mic,
                                         contentDescription = displayStrings.micMainContentDescription,
-                                        modifier = Modifier.size(48.dp)
+                                        modifier = Modifier.size(38.dp)
                                     )
                                 }
                             }
@@ -731,7 +741,7 @@ private fun MessagesList(
     isLoadingModel: Boolean = false,
     modelLoadError: String? = null,
     onRetryModelLoad: () -> Unit = {},
-    chatInputMode: ChatInputMode = ChatInputMode.TextAndVoice,
+    chatInputMode: ChatInputMode = ChatInputMode.VoicePrimary,
     showThoughtProcess: Boolean = true,
     displayStrings: ChatDisplayStrings,
     onSparkChipSend: (String) -> Unit,
@@ -956,13 +966,20 @@ private fun MessageBubble(
     onSparkChipSend: (String) -> Unit = {},
 ) {
     val isUser = message.sender == Sender.USER
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalGyangoAppInDarkTheme.current
     val containerColor = if (isUser) {
         if (isDark) UserMessageBgDark else UserMessageBg
     } else {
         if (isDark) AssistantMessageBgDark else AssistantMessageBg
     }
-    val textColor = if (isUser) Color.White else MaterialTheme.colorScheme.onSurface
+    val userBubbleText = if (isDark) ChatUserBubbleTextDark else Color.White
+    val assistantBodyText = if (isDark) ChatAssistantBodyTextDark else MaterialTheme.colorScheme.onSurface
+    val assistantMetaText =
+        if (isDark) ChatAssistantSecondaryDark
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
+    val assistantAccent =
+        if (isDark) ChatAssistantLinkDark else ChatAssistantLinkLight
+    val textColor = if (isUser) userBubbleText else assistantBodyText
     val isAssistantIdlePlaceholder =
         !isUser && (showTypingPlaceholder || loadingModelPlaceholder)
     val hasAssistantBubbleContent =
@@ -987,7 +1004,7 @@ private fun MessageBubble(
             }
             showTypingPlaceholder -> {
                 HumanTypingIndicator(
-                    dotColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                    dotColor = assistantMetaText.copy(alpha = 0.9f)
                 )
             }
             else -> {
@@ -1005,6 +1022,8 @@ private fun MessageBubble(
                         raw = message.text,
                         rawEnvelopeForLessonParsing = message.rawAssistantEnvelope,
                         textColor = textColor,
+                        accentColor = assistantAccent,
+                        secondaryLabelColor = assistantMetaText,
                         parsedSparksCsv = message.outputSparksCsv,
                         streamInProgress = showLivePresence,
                         showThoughtProcess = showThoughtProcess,
@@ -1060,7 +1079,7 @@ private fun MessageBubble(
                 text = CHAT_ASSISTANT_DISPLAY_NAME,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = assistantMetaText
             )
         }
         if (hasAssistantBubbleContent) {
@@ -1081,11 +1100,9 @@ private fun MessageBubble(
     }
 }
 
-private enum class ChatSettingsPage { Hub, Profile, Chat, Interests, SpeechLocale }
+private enum class ChatSettingsPage { Hub, Profile, Chat, Interests, SpeechLocale, PinChange }
 
-private const val LONG_ANSWER_MIN_TOKENS = 400
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ChatSettingsOverlay(
     page: ChatSettingsPage,
@@ -1103,6 +1120,7 @@ private fun ChatSettingsOverlay(
     }
     val context = LocalContext.current.applicationContext
     val locStrings = remember(context, speechLocaleTag) { chatDisplayStringsForLocale(context, speechLocaleTag) }
+    val appPinStore = remember(context) { AppPinStore(context) }
     val appVersion = rememberAppVersionInfo()
 
     var profileFirst by remember { mutableStateOf(settings.userFirstName) }
@@ -1112,18 +1130,19 @@ private fun ChatSettingsOverlay(
     var profileBirthYear by remember { mutableStateOf(settings.birthYear) }
     var profileAssistantSpeech by remember { mutableStateOf(settings.assistantSpeechEnabled) }
 
-    var chatTemp by remember { mutableStateOf(settings.temperature) }
-    var chatLongAnswers by remember(settings.maxTokens) {
-        mutableStateOf(settings.maxTokens >= LONG_ANSWER_MIN_TOKENS)
-    }
+    var chatMaxTokens by remember { mutableStateOf(settings.maxTokens) }
     var chatLowPower by remember { mutableStateOf(settings.lowPowerMode) }
     var chatRequestModelThought by remember { mutableStateOf(settings.requestModelThoughtInJson) }
+    var chatAppThemeMode by remember { mutableStateOf(settings.appThemeMode) }
 
     LaunchedEffect(settings.requestModelThoughtInJson) {
         chatRequestModelThought = settings.requestModelThoughtInJson
     }
+    LaunchedEffect(settings.appThemeMode) {
+        chatAppThemeMode = settings.appThemeMode
+    }
     LaunchedEffect(settings.maxTokens) {
-        chatLongAnswers = settings.maxTokens >= LONG_ANSWER_MIN_TOKENS
+        chatMaxTokens = settings.maxTokens
     }
 
     LaunchedEffect(page) {
@@ -1137,10 +1156,10 @@ private fun ChatSettingsOverlay(
                 profileAssistantSpeech = settings.assistantSpeechEnabled
             }
             ChatSettingsPage.Chat -> {
-                chatTemp = settings.temperature
-                chatLongAnswers = settings.maxTokens >= LONG_ANSWER_MIN_TOKENS
+                chatMaxTokens = settings.maxTokens
                 chatLowPower = settings.lowPowerMode
                 chatRequestModelThought = settings.requestModelThoughtInJson
+                chatAppThemeMode = settings.appThemeMode
             }
             else -> Unit
         }
@@ -1151,6 +1170,7 @@ private fun ChatSettingsOverlay(
             ChatSettingsPage.Profile, ChatSettingsPage.Chat, ChatSettingsPage.Interests ->
                 onChangePage(ChatSettingsPage.Hub)
             ChatSettingsPage.SpeechLocale -> onChangePage(ChatSettingsPage.Profile)
+            ChatSettingsPage.PinChange -> onChangePage(ChatSettingsPage.Hub)
             ChatSettingsPage.Hub -> onDismissRoot()
         }
     }
@@ -1170,6 +1190,7 @@ private fun ChatSettingsOverlay(
                                 ChatSettingsPage.Chat -> locStrings.settingsChatTitle
                                 ChatSettingsPage.Interests -> locStrings.settingsInterestsTitle
                                 ChatSettingsPage.SpeechLocale -> locStrings.settingsSpeechPickerTitle
+                                ChatSettingsPage.PinChange -> locStrings.settingsChangePinTitle
                             },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
@@ -1198,6 +1219,7 @@ private fun ChatSettingsOverlay(
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
                     ),
+                    actions = {},
                 )
             },
             bottomBar = {
@@ -1258,18 +1280,13 @@ private fun ChatSettingsOverlay(
                             }
                             Button(
                                 onClick = {
-                                    val maxTokens = ChatPreferenceMappings
-                                        .maxTokensForLongAnswersToggle(chatLongAnswers)
-                                        .coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
+                                    val maxTokens = chatMaxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
                                     onSettingsChanged(
                                         settings.copy(
-                                            temperature = chatTemp.coerceIn(
-                                                LlmDefaults.LITERT_MIN_TEMPERATURE,
-                                                LlmDefaults.LITERT_MAX_TEMPERATURE,
-                                            ),
                                             maxTokens = maxTokens,
                                             lowPowerMode = chatLowPower,
                                             requestModelThoughtInJson = chatRequestModelThought,
+                                            appThemeMode = chatAppThemeMode,
                                         ),
                                     )
                                     onChangePage(ChatSettingsPage.Hub)
@@ -1400,10 +1417,10 @@ private fun ChatSettingsOverlay(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onChangePage(ChatSettingsPage.Interests) },
+                                    .alpha(0.58f),
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
                                 ),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                             ) {
@@ -1415,19 +1432,62 @@ private fun ChatSettingsOverlay(
                                     Icon(
                                         Icons.Default.Star,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                                     )
-                                    Column {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(
                                             locStrings.settingsHubInterestsTitle,
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
                                         )
                                         Text(
-                                            locStrings.settingsHubInterestsSubtitle,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            locStrings.settingsHubInterestsComingSoon,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.outline,
                                         )
+                                        Text(
+                                            locStrings.settingsHubInterestsUpcomingNote,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                        )
+                                    }
+                                }
+                            }
+                            if (appPinStore.hasPin()) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onChangePage(ChatSettingsPage.PinChange) },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Column {
+                                            Text(
+                                                locStrings.settingsHubChangePinTitle,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            Text(
+                                                locStrings.settingsHubChangePinSubtitle,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1571,29 +1631,46 @@ private fun ChatSettingsOverlay(
                         ChatSettingsPage.Chat -> {
                             val hintStyle = MaterialTheme.typography.labelSmall
                             val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Switch(
-                                    checked = chatLongAnswers,
-                                    onCheckedChange = { chatLongAnswers = it },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                        checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                    ),
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    locStrings.settingsChatLongAnswersTitle,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
                             Text(
-                                text = locStrings.settingsChatLongAnswersHint,
+                                text = locStrings.settingsAppearanceTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = locStrings.settingsAppearanceHint,
                                 style = hintStyle,
                                 color = hintColor,
-                                modifier = Modifier.padding(start = 4.dp),
                             )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                            ) {
+                                FilterChip(
+                                    selected = chatAppThemeMode == AppThemeMode.SYSTEM,
+                                    onClick = { chatAppThemeMode = AppThemeMode.SYSTEM },
+                                    label = { Text(locStrings.settingsAppearanceSystem) },
+                                    shape = EntryScreenChipShape,
+                                )
+                                FilterChip(
+                                    selected = chatAppThemeMode == AppThemeMode.LIGHT,
+                                    onClick = { chatAppThemeMode = AppThemeMode.LIGHT },
+                                    label = { Text(locStrings.settingsAppearanceLight) },
+                                    shape = EntryScreenChipShape,
+                                )
+                                FilterChip(
+                                    selected = chatAppThemeMode == AppThemeMode.DARK,
+                                    onClick = { chatAppThemeMode = AppThemeMode.DARK },
+                                    label = { Text(locStrings.settingsAppearanceDark) },
+                                    shape = EntryScreenChipShape,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            val thinkingTitle = locStrings.settingsChatThinkingProcessTitle
+                                .ifBlank { locStrings.settingsChatReasoningTitle }
+                            val thinkingDesc = locStrings.settingsChatThinkingProcessDescription
+                                .ifBlank { locStrings.settingsChatReasoningHint }
+
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Switch(
                                     checked = chatRequestModelThought,
@@ -1605,39 +1682,40 @@ private fun ChatSettingsOverlay(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    locStrings.settingsChatReasoningTitle,
+                                    text = thinkingTitle,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
                                 )
                             }
                             Text(
-                                text = locStrings.settingsChatReasoningHint,
+                                text = thinkingDesc,
                                 style = hintStyle,
                                 color = hintColor,
                                 modifier = Modifier.padding(start = 4.dp),
                             )
+                            Spacer(modifier = Modifier.height(12.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
-                                    "${locStrings.settingsChatCreativityTitle} ${"%.2f".format(chatTemp)}",
+                                    text = "${locStrings.settingsChatMaxTokensTitle}: $chatMaxTokens",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
                                 )
                                 Slider(
-                                    value = chatTemp,
-                                    onValueChange = {
-                                        chatTemp = it.coerceIn(
-                                            LlmDefaults.LITERT_MIN_TEMPERATURE,
-                                            LlmDefaults.LITERT_MAX_TEMPERATURE,
+                                    value = chatMaxTokens.toFloat(),
+                                    onValueChange = { v ->
+                                        chatMaxTokens = v.roundToInt().coerceIn(
+                                            64,
+                                            LlmDefaults.MAX_NEW_TOKENS_CAP,
                                         )
                                     },
-                                    valueRange = LlmDefaults.LITERT_MIN_TEMPERATURE..LlmDefaults.LITERT_MAX_TEMPERATURE,
+                                    valueRange = 64f..LlmDefaults.MAX_NEW_TOKENS_CAP.toFloat(),
                                     colors = SliderDefaults.colors(
                                         thumbColor = MaterialTheme.colorScheme.primary,
                                         activeTrackColor = MaterialTheme.colorScheme.primary,
                                     ),
                                 )
                                 Text(
-                                    text = locStrings.settingsChatCreativityHint,
+                                    text = locStrings.settingsChatMaxTokensDescription,
                                     style = hintStyle,
                                     color = hintColor,
                                 )
@@ -1711,6 +1789,15 @@ private fun ChatSettingsOverlay(
                                     }
                                 }
                             }
+                        }
+
+                        ChatSettingsPage.PinChange -> {
+                            PinChangeScreen(
+                                strings = locStrings,
+                                pinStore = appPinStore,
+                                onChangeComplete = { onChangePage(ChatSettingsPage.Hub) },
+                                onCancel = { onChangePage(ChatSettingsPage.Hub) },
+                            )
                         }
 
                         ChatSettingsPage.SpeechLocale -> {

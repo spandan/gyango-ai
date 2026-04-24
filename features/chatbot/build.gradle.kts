@@ -64,6 +64,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")

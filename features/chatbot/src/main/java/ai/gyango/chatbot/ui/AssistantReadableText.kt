@@ -21,12 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,9 +38,6 @@ import androidx.compose.ui.unit.sp
 import ai.gyango.assistant.AssistantOutput
 import ai.gyango.assistant.AssistantTextPolisher
 import ai.gyango.assistant.GyangoOutputEnvelope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-
 private val BlockSpacing = 4.dp
 
 /** Italic “thinking” line while streaming before section bodies appear. */
@@ -73,6 +67,10 @@ fun AssistantReadableText(
     /** When set, used to parse lesson layout from the raw envelope; if null, [raw] is used. */
     rawEnvelopeForLessonParsing: String? = null,
     textColor: Color,
+    /** Markdown links and spark chips; defaults to theme primary when null. */
+    accentColor: Color? = null,
+    /** Thinking line, pulse dots; defaults to theme onSurfaceVariant when null. */
+    secondaryLabelColor: Color? = null,
     modifier: Modifier = Modifier,
     /** When set (e.g. after save), used for spark chips; otherwise sparks are parsed from [raw]. */
     parsedSparksCsv: String? = null,
@@ -103,24 +101,8 @@ fun AssistantReadableText(
     val showSparksSection = !streamInProgress && sparkChips.isNotEmpty()
     val hasVisibleStreamText = raw.isNotBlank()
     val showStreamWaitLine = streamInProgress && showThoughtProcess && !hasVisibleStreamText
-    val waitCycle = remember {
-        listOf(".", "..", "...", "....", ".....", "......")
-    }
-    var waitCycleIndex by remember { mutableIntStateOf(0) }
-    LaunchedEffect(showStreamWaitLine) {
-        if (!showStreamWaitLine) return@LaunchedEffect
-        waitCycleIndex = 0
-        while (isActive) {
-            delay(500)
-            waitCycleIndex = (waitCycleIndex + 1) % waitCycle.size
-        }
-    }
-    val waitLineText = if (showStreamWaitLine) {
-        waitCycle[waitCycleIndex].padEnd(6, ' ')
-    } else {
-        ""
-    }
-    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val resolvedAccent = accentColor ?: MaterialTheme.colorScheme.primary
+    val resolvedSecondary = secondaryLabelColor ?: MaterialTheme.colorScheme.onSurfaceVariant
     val bodyStyle = LessonBodyStyle
     val streamPlainPreview = remember(raw, streamInProgress) {
         if (streamInProgress && raw.isNotBlank()) {
@@ -133,21 +115,22 @@ fun AssistantReadableText(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(BlockSpacing),
     ) {
-        if (showStreamWaitLine && waitLineText.isNotEmpty()) {
+        if (showStreamWaitLine) {
+            val thinkingLabel = jsonStreamingPlaceholder.trim().ifBlank { "Thinking…" }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StreamWaitPulseDots(dotColor = secondary.copy(alpha = 0.85f))
+                StreamWaitPulseDots(dotColor = resolvedSecondary.copy(alpha = 0.88f))
                 Text(
-                    text = waitLineText,
+                    text = thinkingLabel,
                     modifier = Modifier.weight(1f),
                     style = LessonIntroStyle.copy(
                         hyphens = Hyphens.None,
                         fontStyle = FontStyle.Italic,
                     ),
-                    color = secondary.copy(alpha = 0.92f),
+                    color = resolvedSecondary.copy(alpha = 0.95f),
                 )
             }
         }
@@ -170,6 +153,7 @@ fun AssistantReadableText(
                         AssistantMarkdownTextView(
                             markdown = markdown,
                             textColor = textColor,
+                            linkColor = resolvedAccent,
                             bodyStyle = bodyStyle,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -198,7 +182,7 @@ fun AssistantReadableText(
                             letterSpacing = 0.02.sp,
                             textDecoration = TextDecoration.Underline,
                         ),
-                        color = MaterialTheme.colorScheme.primary,
+                        color = resolvedAccent,
                         textAlign = TextAlign.Start,
                     )
                 }

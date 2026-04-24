@@ -68,6 +68,11 @@ class ChatViewModel(
         private const val TAG = "ChatViewModel"
         private const val IMAGE_OCR_MAX_CHARS = 5000
         private const val IMAGE_OCR_CONTEXT_TURNS = 3
+        private val IMAGE_UPLOAD_SPARKS_CSV = listOf(
+            "Solve the problem from the attached image",
+            "Interpret the text from attached image and summarize it for me",
+            "Answer the question based on attached image",
+        ).joinToString(GyangoOutputEnvelope.SPARK_CHIPS_DELIMITER)
         /** Defer [Orchestrator.generate] until after IME hide / layout settle (keep small — adds wall latency). */
         private const val INFERENCE_START_DELAY_MS = 80L
         /**
@@ -439,9 +444,11 @@ class ChatViewModel(
         val reqId = assistantMessageId
         val startedAtMs = System.currentTimeMillis()
         if (BuildConfig.LLM_IO_LOGS) {
+            val sample = LlmDefaults.samplingForSubject(routedSubject)
             Log.i(
                 TAG,
-                "LLM REQUEST id=$reqId tool=chatbot temp=${_settings.value.temperature} " +
+                "LLM REQUEST id=$reqId tool=chatbot temp=${sample.temperature} " +
+                    "topP=${sample.topP} topK=${sample.topK} " +
                     "maxTokens=${_settings.value.maxTokens} lowPower=${_settings.value.lowPowerMode} " +
                     "locale=${_settings.value.speechInputLocaleTag} " +
                     "subjectMode=${routedSubject} autoRoute=${_settings.value.autoRouteSubject}"
@@ -591,7 +598,7 @@ class ChatViewModel(
                 orchestrator.generate(
                     request = OrchestrationRequest(
                         prompt = prompt,
-                        settings = _settings.value,
+                        settings = _settings.value.copy(subjectMode = routedSubject),
                         toolId = "chatbot"
                     ),
                     onToken = { token ->
@@ -752,8 +759,16 @@ class ChatViewModel(
 
     fun updateSettings(newSettings: InferenceSettings) {
         val previous = _settings.value
+        val normalizedSubject = when (newSettings.subjectMode) {
+            SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY -> SubjectMode.SCIENCE
+            else -> newSettings.subjectMode
+        }
+        val topicSampling = LlmDefaults.samplingForSubject(newSettings.subjectMode)
         val coerced = newSettings.copy(
-            maxTokens = newSettings.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
+            maxTokens = newSettings.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP),
+            temperature = topicSampling.temperature,
+            topP = topicSampling.topP,
+            topK = topicSampling.topK,
         )
         val prevLane = interestSubjectKeyForSettings(previous.subjectMode)
         val newLane = interestSubjectKeyForSettings(coerced.subjectMode)
@@ -807,6 +822,7 @@ class ChatViewModel(
                     pendingImageContextTurnsRemaining = IMAGE_OCR_CONTEXT_TURNS
                     appendAssistantHint(
                         "Image attached. Ask your question, and I will use details from that image for the next $IMAGE_OCR_CONTEXT_TURNS turns.",
+                        sparksCsv = IMAGE_UPLOAD_SPARKS_CSV,
                     )
                 }
                 is ImageTextExtractor.Result.Error -> {
@@ -830,6 +846,7 @@ class ChatViewModel(
                     pendingImageContextTurnsRemaining = IMAGE_OCR_CONTEXT_TURNS
                     appendAssistantHint(
                         "Photo captured. Ask your question, and I will use details from that photo for the next $IMAGE_OCR_CONTEXT_TURNS turns.",
+                        sparksCsv = IMAGE_UPLOAD_SPARKS_CSV,
                     )
                 }
                 is ImageTextExtractor.Result.Error -> {
@@ -885,11 +902,12 @@ class ChatViewModel(
         updateSettings(_settings.value.copy(starterCheckInPromptSeen = true))
     }
 
-    private fun appendAssistantHint(text: String) {
+    private fun appendAssistantHint(text: String, sparksCsv: String? = null) {
         val hint = ChatMessage(
             id = idGenerator.incrementAndGet(),
             sender = Sender.ASSISTANT,
             text = text,
+            outputSparksCsv = sparksCsv?.trim()?.takeIf { it.isNotBlank() },
             timestamp = System.currentTimeMillis(),
         )
         _messages.value = _messages.value + hint

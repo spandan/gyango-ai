@@ -121,18 +121,21 @@ class LiteRtLlm(
         mutex.withLock {
             withContext(Dispatchers.Default) {
                 ensureEngine(onPhaseChange = onPhaseChange, lowPowerMode = request.settings.lowPowerMode)
-                val temperature = request.settings.temperature
+                val topicSampling = LlmDefaults.samplingForSubject(request.settings.subjectMode)
+                val temperature = topicSampling.temperature
                     .coerceIn(LlmDefaults.LITERT_MIN_TEMPERATURE, LlmDefaults.LITERT_MAX_TEMPERATURE)
                     .toDouble()
                 val topP = if (request.settings.lowPowerMode) {
                     LlmDefaults.LITERT_LOW_POWER_TOP_P
                 } else {
-                    LlmDefaults.LITERT_DEFAULT_TOP_P
+                    topicSampling.topP
+                        .toDouble()
+                        .coerceIn(LlmDefaults.LITERT_MIN_TOP_P.toDouble(), LlmDefaults.LITERT_MAX_TOP_P.toDouble())
                 }
                 val topK = if (request.settings.lowPowerMode) {
                     LlmDefaults.LITERT_LOW_POWER_TOP_K
                 } else {
-                    LlmDefaults.LITERT_DEFAULT_TOP_K
+                    topicSampling.topK.coerceIn(LlmDefaults.LITERT_MIN_TOP_K, LlmDefaults.LITERT_MAX_TOP_K)
                 }
                 val maxCap = if (request.settings.lowPowerMode) {
                     LlmDefaults.LOW_RAM_MAX_NEW_TOKENS_CAP

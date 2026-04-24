@@ -61,6 +61,7 @@ class ChatRepository(private val context: Context) {
             speechInputLocaleTag = "en-US",
             assistantSpeechEnabled = false,
             voiceOnboardingComplete = false,
+            pinSetupComplete = false,
             subjectMode = SubjectMode.CURIOSITY,
             maxTokens = ChatPreferenceMappings.MAX_TOKENS_SHORT_ANSWERS,
         )
@@ -90,7 +91,25 @@ class ChatRepository(private val context: Context) {
             SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY -> SubjectMode.SCIENCE
             else -> settings.subjectMode
         }
+        val topicSampling = LlmDefaults.samplingForSubject(settings.subjectMode)
+        val temp = topicSampling.temperature.coerceIn(
+            LlmDefaults.LITERT_MIN_TEMPERATURE,
+            LlmDefaults.LITERT_MAX_TEMPERATURE,
+        )
+        val topP = topicSampling.topP.coerceIn(LlmDefaults.LITERT_MIN_TOP_P, LlmDefaults.LITERT_MAX_TOP_P)
+        val topK = topicSampling.topK.coerceIn(LlmDefaults.LITERT_MIN_TOP_K, LlmDefaults.LITERT_MAX_TOP_K)
+        val profileGateComplete = settings.profileOnboardingSubmitted ||
+            settings.voiceOnboardingComplete ||
+            (
+                settings.pinSetupComplete &&
+                    settings.userFirstName.isNotBlank() &&
+                    settings.userLastName.isNotBlank()
+                )
         return settings.copy(
+            temperature = temp,
+            topP = topP,
+            topK = topK,
+            profileOnboardingSubmitted = profileGateComplete,
             speechInputLocaleTag = speech,
             userFirstName = settings.userFirstName.trim().take(80),
             userLastName = settings.userLastName.trim().take(80),

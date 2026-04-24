@@ -5,6 +5,10 @@ import android.graphics.Bitmap
 import android.content.Intent
 import android.net.Uri
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -16,6 +20,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,11 +36,17 @@ import ai.gyango.chatbot.ui.BrainPreparingProgressScreen
 import ai.gyango.chatbot.ui.BrainWaitingForWifiScreen
 import ai.gyango.chatbot.ui.ChatInputMode
 import ai.gyango.chatbot.ui.ModelHardwareUnsupportedScreen
+import ai.gyango.chatbot.ui.AiContentDisclaimerBanner
 import ai.gyango.chatbot.ui.LearningCheckInPromptScreen
 import ai.gyango.chatbot.ui.LearningCheckInScreen
+import ai.gyango.chatbot.ui.learningCheckInCopy
+import ai.gyango.chatbot.ui.OnboardingStepShell
 import ai.gyango.chatbot.ui.OnboardingWelcomeScreen
 import ai.gyango.chatbot.ui.ProfileOnboardingScreen
+import ai.gyango.chatbot.ui.PinSetupScreen
+import ai.gyango.chatbot.ui.PinUnlockScreen
 import ai.gyango.chatbot.ui.TtsLanguageSetupScreen
+import ai.gyango.chatbot.security.AppPinStore
 import ai.gyango.chatbot.ui.brainPackProgressDetail
 import ai.gyango.chatbot.ui.rememberChatDisplayStrings
 import androidx.core.content.ContextCompat
@@ -47,12 +59,19 @@ import ai.gyango.chatbot.ui.ChatViewModel
 import ai.gyango.chatbot.ui.theme.GyangoAITheme
 import ai.gyango.chatbot.voice.SpeechTranscriber
 import ai.gyango.assistant.AssistantTextPolisher
+import ai.gyango.core.AppThemeMode
 import ai.gyango.core.Sender
 import ai.gyango.core.hardware.ModelHardwareGate
 import ai.gyango.modeldelivery.GyangoPadDelivery
 import ai.gyango.net.isActiveNetworkCellular
-import ai.gyango.net.isActiveNetworkWifi
+import ai.gyango.net.isUnmeteredPadDownloadNetworkAvailable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -117,6 +136,8 @@ class MainActivity : ComponentActivity() {
     ) {
         ttsSetupTick.intValue += 1
     }
+
+    private val pinLockViewModel: MainPinLockViewModel by viewModels()
 
     private val chatViewModel: ChatViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -202,6 +223,14 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Android speech setup is unavailable on this device", Toast.LENGTH_LONG).show()
     }
 
+    override fun onStop() {
+        super.onStop()
+        val s = chatViewModel.settings.value
+        if (!s.pinSetupComplete || !s.voiceOnboardingComplete) return
+        if (!AppPinStore(applicationContext).hasPin()) return
+        pinLockViewModel.requestUnlock()
+    }
+
     override fun onResume() {
         super.onResume()
         padNetworkResumeTick.intValue += 1
@@ -246,9 +275,16 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            GyangoAITheme {
+            val settingsState by chatViewModel.settings.collectAsState()
+            val systemDark = isSystemInDarkTheme()
+            val useDarkTheme = when (settingsState.appThemeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            GyangoAITheme(darkTheme = useDarkTheme) {
+                Box(modifier = Modifier.fillMaxSize()) {
                 val activity = this@MainActivity
-                val settingsState by chatViewModel.settings.collectAsState()
                 val messagesState by chatViewModel.messages.collectAsState()
                 val generatingState by chatViewModel.isGenerating.collectAsState()
                 val loadingModelState by chatViewModel.isLoadingModel.collectAsState()
@@ -299,6 +335,31 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(!BuildConfig.USE_PAD || GyangoPadDelivery.isMergedModelReady(activity))
                 }
                 val scope = rememberCoroutineScope()
+                /** Bumps when any internet-capable network appears, is lost, or capabilities change (PAD gate is not only onResume). */
+                var connectivityTick by remember { mutableIntStateOf(0) }
+                DisposableEffect(activity) {
+                    val cm = activity.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val request = NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build()
+                    val callback = object : ConnectivityManager.NetworkCallback() {
+                        override fun onAvailable(network: Network) {
+                            mainHandler.post { connectivityTick++ }
+                        }
+
+                        override fun onLost(network: Network) {
+                            mainHandler.post { connectivityTick++ }
+                        }
+
+                        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                            mainHandler.post { connectivityTick++ }
+                        }
+                    }
+                    cm.registerNetworkCallback(request, callback)
+                    onDispose {
+                        runCatching { cm.unregisterNetworkCallback(callback) }
+                    }
+                }
                 // PAD hint on profile / check-in when download is running or waiting on network (after pre-profile gate).
                 val padBackgroundStatusHint =
                     if (
@@ -466,6 +527,7 @@ class MainActivity : ComponentActivity() {
                  */
                 LaunchedEffect(
                     padResumeTick,
+                    connectivityTick,
                     padStep,
                     hardwareSupport.canRunSelectedModel,
                 ) {
@@ -482,7 +544,7 @@ class MainActivity : ComponentActivity() {
                         return@LaunchedEffect
                     }
                     when {
-                        activity.isActiveNetworkWifi() -> {
+                        activity.isUnmeteredPadDownloadNetworkAvailable() -> {
                             padOnboardingGateResolved = true
                             padPreProfileNetworkStepComplete = true
                             padDownloadError = null
@@ -493,7 +555,10 @@ class MainActivity : ComponentActivity() {
                         activity.isActiveNetworkCellular() && padStep != PadBrainStep.WaitWifi -> {
                             padStep = PadBrainStep.PickNetwork
                         }
-                        !activity.isActiveNetworkCellular() && padStep == PadBrainStep.PickNetwork && padDownloadError == null -> {
+                        !activity.isActiveNetworkCellular() &&
+                            padStep == PadBrainStep.PickNetwork &&
+                            padDownloadError == null &&
+                            !activity.isUnmeteredPadDownloadNetworkAvailable() -> {
                             padOnboardingGateResolved = true
                             padStep = PadBrainStep.WaitWifi
                         }
@@ -556,28 +621,74 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     !settingsState.voiceOnboardingComplete -> {
-                        if (!settingsState.onboardingWelcomeSeen) {
-                            OnboardingWelcomeScreen(
-                                strings = entryStrings,
-                                onContinue = {
-                                    chatViewModel.updateSettings(
-                                        settingsState.copy(onboardingWelcomeSeen = true),
+                        val appPinStore = remember(activity) {
+                            AppPinStore(activity.applicationContext)
+                        }
+                        val needsProfileStep =
+                            !settingsState.profileOnboardingSubmitted ||
+                                settingsState.userFirstName.isBlank() ||
+                                settingsState.userLastName.isBlank()
+                        val needsPinSetup =
+                            settingsState.userFirstName.isNotBlank() &&
+                                settingsState.userLastName.isNotBlank() &&
+                                (!settingsState.pinSetupComplete || !appPinStore.hasPin())
+                        when {
+                            !settingsState.onboardingWelcomeSeen -> {
+                                OnboardingWelcomeScreen(
+                                    strings = entryStrings,
+                                    onContinue = {
+                                        chatViewModel.updateSettings(
+                                            settingsState.copy(onboardingWelcomeSeen = true),
+                                        )
+                                    },
+                                )
+                            }
+                            needsProfileStep -> {
+                                OnboardingStepShell(
+                                    title = entryStrings.onboardingWelcomeTitle,
+                                    subtitle = entryStrings.onboardingProgressSavedHint,
+                                    bottomBar = { AiContentDisclaimerBanner(modifier = Modifier.fillMaxWidth()) },
+                                ) { bodyModifier ->
+                                    ProfileOnboardingScreen(
+                                        modifier = bodyModifier,
+                                        embeddedInOnboardingShell = true,
+                                        settings = settingsState,
+                                        strings = entryStrings,
+                                        onProfileDraft = { chatViewModel.updateSettings(it) },
+                                        onComplete = { chatViewModel.updateSettings(it) },
+                                        statusHint = padBackgroundStatusHint,
+                                        onReadAloudYesSelected = { tag ->
+                                            if (ttsLanguageStatus(tag) != TtsLanguageStatus.READY) {
+                                                launchAndroidTtsSetup()
+                                            }
+                                        },
                                     )
-                                },
-                            )
-                        } else {
-                            ProfileOnboardingScreen(
-                                settings = settingsState,
-                                strings = entryStrings,
-                                onProfileDraft = { chatViewModel.updateSettings(it) },
-                                onComplete = { chatViewModel.updateSettings(it) },
-                                statusHint = padBackgroundStatusHint,
-                                onReadAloudYesSelected = { tag ->
-                                    if (ttsLanguageStatus(tag) != TtsLanguageStatus.READY) {
-                                        launchAndroidTtsSetup()
-                                    }
-                                },
-                            )
+                                }
+                            }
+                            needsPinSetup -> {
+                                PinSetupScreen(
+                                    embeddedInOnboardingShell = false,
+                                    settings = settingsState,
+                                    strings = entryStrings,
+                                    pinStore = appPinStore,
+                                    onPinSaved = { chatViewModel.updateSettings(it) },
+                                )
+                            }
+                            else -> {
+                                LaunchedEffect(Unit) {
+                                    chatViewModel.updateSettings(
+                                        settingsState.copy(
+                                            voiceOnboardingComplete = true,
+                                            pinSetupComplete = settingsState.pinSetupComplete ||
+                                                appPinStore.hasPin(),
+                                        ),
+                                    )
+                                }
+                                Surface(
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = MaterialTheme.colorScheme.surface,
+                                ) {}
+                            }
                         }
                     }
                     settingsState.assistantSpeechEnabled && ttsSetupRequired -> {
@@ -593,15 +704,25 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     postDownloadStep == PostDownloadStep.Prompt -> {
-                        LearningCheckInPromptScreen(
-                            localeTag = settingsState.speechInputLocaleTag,
-                            statusHint = padBackgroundStatusHint,
-                            onStart = { postDownloadStep = PostDownloadStep.CheckIn },
-                            onSkip = {
-                                chatViewModel.skipStarterCheckIn()
-                                postDownloadStep = PostDownloadStep.Done
-                            },
-                        )
+                        val checkInCopy = remember(settingsState.speechInputLocaleTag) {
+                            learningCheckInCopy(settingsState.speechInputLocaleTag)
+                        }
+                        OnboardingStepShell(
+                            title = checkInCopy.promptTitle,
+                            subtitle = checkInCopy.promptBody,
+                        ) { bodyModifier ->
+                            LearningCheckInPromptScreen(
+                                modifier = bodyModifier,
+                                embedInShell = true,
+                                localeTag = settingsState.speechInputLocaleTag,
+                                statusHint = padBackgroundStatusHint,
+                                onStart = { postDownloadStep = PostDownloadStep.CheckIn },
+                                onSkip = {
+                                    chatViewModel.skipStarterCheckIn()
+                                    postDownloadStep = PostDownloadStep.Done
+                                },
+                            )
+                        }
                         return@GyangoAITheme
                     }
                     postDownloadStep == PostDownloadStep.CheckIn -> {
@@ -616,19 +737,29 @@ class MainActivity : ComponentActivity() {
                             if (BuildConfig.USE_PAD && padStep != PadBrainStep.Done) return@LaunchedEffect
                             chatViewModel.warmUpModel()
                         }
-                        LearningCheckInScreen(
-                            localeTag = settingsState.speechInputLocaleTag,
-                            birthYear = settingsState.birthYear,
-                            statusHint = padBackgroundStatusHint,
-                            onComplete = { answers, subjects ->
-                                chatViewModel.completeStarterCheckIn(answers, subjects)
-                                postDownloadStep = PostDownloadStep.Done
-                            },
-                            onSkip = {
-                                chatViewModel.skipStarterCheckIn()
-                                postDownloadStep = PostDownloadStep.Done
-                            },
-                        )
+                        val checkInCopy = remember(settingsState.speechInputLocaleTag) {
+                            learningCheckInCopy(settingsState.speechInputLocaleTag)
+                        }
+                        OnboardingStepShell(
+                            title = checkInCopy.screenTitle,
+                            subtitle = checkInCopy.screenBody,
+                        ) { bodyModifier ->
+                            LearningCheckInScreen(
+                                modifier = bodyModifier,
+                                embedInShell = true,
+                                localeTag = settingsState.speechInputLocaleTag,
+                                birthYear = settingsState.birthYear,
+                                statusHint = padBackgroundStatusHint,
+                                onComplete = { answers, subjects ->
+                                    chatViewModel.completeStarterCheckIn(answers, subjects)
+                                    postDownloadStep = PostDownloadStep.Done
+                                },
+                                onSkip = {
+                                    chatViewModel.skipStarterCheckIn()
+                                    postDownloadStep = PostDownloadStep.Done
+                                },
+                            )
+                        }
                         return@GyangoAITheme
                     }
                     needsPadModelDownload &&
@@ -679,10 +810,10 @@ class MainActivity : ComponentActivity() {
                     }
                     (!BuildConfig.USE_PAD || GyangoPadDelivery.isMergedModelReady(activity)) &&
                         postPersonaPadGateReady -> {
-                        var chatInputMode by rememberSaveable { mutableStateOf(ChatInputMode.TextAndVoice.name) }
+                        var chatInputMode by rememberSaveable { mutableStateOf(ChatInputMode.VoicePrimary.name) }
                         val mode = remember(chatInputMode) {
                             runCatching { ChatInputMode.valueOf(chatInputMode) }
-                                .getOrDefault(ChatInputMode.TextAndVoice)
+                                .getOrDefault(ChatInputMode.VoicePrimary)
                         }
 
                         LaunchedEffect(settingsState.voiceOnboardingComplete, hardwareSupport.canRunSelectedModel, padStep) {
@@ -758,6 +889,19 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = null
                             )
                         }
+                    }
+                }
+                    val pinNeedsUnlock by pinLockViewModel.needsUnlock.collectAsState()
+                    val unlockPinStore = remember(activity) {
+                        AppPinStore(activity.applicationContext)
+                    }
+                    if (pinNeedsUnlock && unlockPinStore.hasPin()) {
+                        PinUnlockScreen(
+                            strings = entryStrings,
+                            pinStore = unlockPinStore,
+                            onUnlocked = { pinLockViewModel.clearUnlock() },
+                            modifier = Modifier.zIndex(24f),
+                        )
                     }
                 }
             }

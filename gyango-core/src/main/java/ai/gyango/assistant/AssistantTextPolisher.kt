@@ -57,6 +57,8 @@ object AssistantTextPolisher {
         // Markwon shows literal "ext{}" in bubbles.
         s = transformOutsideFencedCodeBlocks(s, ::repairBareMangledTextFragments)
         s = transformOutsideFencedCodeBlocks(s, ::stripDanglingDollarDelimiters)
+        // Adjacent `$a$$b$` (no space) parses as one blob after JLatex `$$` normalization; keep spans separate.
+        s = transformOutsideFencedCodeBlocks(s, ::insertSpaceBetweenAdjacentInlineDollarMath)
         if (convertLatexToPlain) {
             s = latexLiteToPlain(s)
             // Chemistry / LaTeX-lite outside $…$ (e.g. mangled `\text` → `ext{H}_2`) and stragglers after $ pass.
@@ -117,14 +119,30 @@ object AssistantTextPolisher {
             unescapedDollarIdx += i
         }
         if (unescapedDollarIdx.isEmpty()) return chunk
-        // If odd count, trim the last stray delimiter.
-        if (unescapedDollarIdx.size % 2 == 1) {
-            chars[unescapedDollarIdx.last()] = ' '
+        // Protect currency-like `$` prefixes (e.g. `$5`, `$12.99`) so orphan cleanup never removes them.
+        val candidateMathDelimiters = unescapedDollarIdx.filterNot { isCurrencyDollarPrefix(chunk, it) }
+        // If odd count among math delimiters, trim the last stray one.
+        if (candidateMathDelimiters.size % 2 == 1) {
+            chars[candidateMathDelimiters.last()] = ' '
         }
         // Remove lines that are only stray delimiters/spaces.
         return String(chars)
             .replace(Regex("""(?m)^\s*\$+\s*$"""), "")
             .replace(Regex("""\n{3,}"""), "\n\n")
+    }
+
+    /**
+     * True for currency-like forms such as `$5`, `$12.99`, `$1,200`.
+     * This avoids stripping valid currency symbols while removing orphan math delimiters.
+     */
+    private fun isCurrencyDollarPrefix(text: String, dollarIdx: Int): Boolean {
+        val prev = text.getOrNull(dollarIdx - 1)
+        if (prev != null && (prev.isLetterOrDigit() || prev == '_')) return false
+        val rest = text.substring(dollarIdx + 1)
+        val amountMatch = Regex("""^([0-9]{1,3}(?:,[0-9]{3})*|[0-9]+)(?:\.[0-9]{1,2})?""").find(rest)
+            ?: return false
+        val boundary = rest.getOrNull(amountMatch.value.length)
+        return boundary == null || boundary.isWhitespace() || boundary in ".,!?;:)]}"
     }
 
     /**
@@ -246,8 +264,9 @@ object AssistantTextPolisher {
         while (t.contains("\\n")) {
             t = t.replace("\\n", "\n")
         }
-        while (t.contains("\\t")) {
-            t = t.replace("\\t", "\t")
+        // Decode escaped tab only when it is not the start of a LaTeX command (e.g. \times, \text).
+        while (Regex("""\\t(?![A-Za-z])""").containsMatchIn(t)) {
+            t = Regex("""\\t(?![A-Za-z])""").replace(t, "\t")
         }
         return t
     }
@@ -518,6 +537,22 @@ object AssistantTextPolisher {
             flushOutside()
         }
         return result.toString().trimEnd()
+    }
+
+    /**
+     * Insert a space between consecutive single-dollar inline spans on the same line so each
+     * `$…$` stays a distinct region for Markwon/JLatexMath (`$a$$b$` → `$a$ $b$`). Chains need
+     * repeated application. Skips spans whose opening `$` is escaped (`\$`).
+     */
+    private fun insertSpaceBetweenAdjacentInlineDollarMath(chunk: String): String {
+        val pattern = Regex("""(?<![\\])(\$[^$\n]+\$)(?=(?<![\\])\$[^$\n]+\$)""")
+        var s = chunk
+        var prev: String
+        do {
+            prev = s
+            s = pattern.replace(s) { "${it.groupValues[1]} " }
+        } while (s != prev)
+        return s
     }
 
     /**

@@ -35,6 +35,19 @@ data class GenerateRequest(
 /**
  * Inference parameters used across all models.
  */
+/**
+ * User-controlled light/dark appearance. The chat top bar keeps the same blue branding in both modes.
+ */
+@Serializable
+enum class AppThemeMode {
+    /** Follow the device night mode. */
+    SYSTEM,
+    /** Force light surfaces. */
+    LIGHT,
+    /** Force dark surfaces (Material dark pairs well with the sky-blue header). */
+    DARK,
+}
+
 @Serializable
 enum class SubjectMode {
     GENERAL,
@@ -84,7 +97,16 @@ data class LearnerProfile(
 
 @Serializable
 data class InferenceSettings(
-    val temperature: Float = 0.3f,
+    /**
+     * Legacy persisted fields; decode-time normalization and inference use [LlmDefaults.samplingForSubject]
+     * (per-topic table in [topicSamplingForSubject]) from the active topic. Phase 1: preset-only—no
+     * learner-facing controls for these three fields.
+     */
+    val temperature: Float = LlmDefaults.SAMPLING_DEFAULT_TEMPERATURE,
+    /** @see [temperature] */
+    val topP: Float = LlmDefaults.SAMPLING_DEFAULT_TOP_P,
+    /** @see [temperature] */
+    val topK: Int = LlmDefaults.SAMPLING_DEFAULT_TOP_K,
     /** Max new tokens per reply; must leave room for priming inside [LlmDefaults.CONTEXT_LENGTH_TOKENS]. */
     val maxTokens: Int = LlmDefaults.DEFAULT_MAX_NEW_TOKENS,
     /**
@@ -124,9 +146,19 @@ data class InferenceSettings(
      */
     val onboardingWelcomeSeen: Boolean = false,
     /**
+     * Set to true only when the user taps Continue on the first-run profile form. Draft autosave of
+     * names must not advance onboarding until this is true (see app entry flow).
+     */
+    val profileOnboardingSubmitted: Boolean = false,
+    /**
      * Set to false until the user finishes the first-run profile sheet (name + conversation language).
      */
     val voiceOnboardingComplete: Boolean = false,
+    /**
+     * When false, the user must complete PIN setup after profile before [voiceOnboardingComplete] is set true.
+     * Default true so existing installs without this field skip PIN onboarding.
+     */
+    val pinSetupComplete: Boolean = true,
     /**
      * Optional birth month (1..12) used only for age-aware response caution.
      */
@@ -184,4 +216,8 @@ data class InferenceSettings(
      * When false, [subjectMode] from the UI tile is used.
      */
     val autoRouteSubject: Boolean = true,
+    /**
+     * Whether the app follows system night mode or forces light or dark Material surfaces.
+     */
+    val appThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
 )

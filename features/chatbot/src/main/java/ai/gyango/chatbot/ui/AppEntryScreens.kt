@@ -20,7 +20,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -172,7 +178,7 @@ fun OnboardingWelcomeScreen(
  *
  * @param onProfileDraft Called after typing pauses so names and language persist before "Continue".
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileOnboardingScreen(
     settings: InferenceSettings,
@@ -181,6 +187,12 @@ fun ProfileOnboardingScreen(
     onComplete: (InferenceSettings) -> Unit,
     statusHint: String? = null,
     onReadAloudYesSelected: (preferredLocaleTag: String) -> Unit = {},
+    /**
+     * When true, this screen is placed under [OnboardingStepShell]: no outer [Surface], no duplicate
+     * welcome title block, no bottom disclaimer (shell provides header / optional footer).
+     */
+    embeddedInOnboardingShell: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var first by remember(settings.userFirstName) { mutableStateOf(settings.userFirstName) }
     var last by remember(settings.userLastName) { mutableStateOf(settings.userLastName) }
@@ -229,37 +241,32 @@ fun ProfileOnboardingScreen(
                         birthYear = birthYear,
                         assistantSpeechEnabled = assistantSpeechEnabled,
                         voiceOnboardingComplete = false,
+                        pinSetupComplete = settings.pinSetupComplete,
+                        profileOnboardingSubmitted = settings.profileOnboardingSubmitted,
                     ),
                 )
             }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .displayCutoutPadding()
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 24.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-            Text(
-                text = strings.onboardingWelcomeTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = strings.onboardingProgressSavedHint,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-            )
+    @Composable
+    fun ProfileFormColumn(scrollModifier: Modifier, showWelcomeHeader: Boolean) {
+        Column(
+            modifier = scrollModifier,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            if (showWelcomeHeader) {
+                Text(
+                    text = strings.onboardingWelcomeTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = strings.onboardingProgressSavedHint,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                )
+            }
             statusHint?.let { hint ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -354,14 +361,48 @@ fun ProfileOnboardingScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SpeechInputLocales.OPTIONS.forEach { (tag, name) ->
-                            FilterChip(
-                                selected = speechLocaleTag == tag,
-                                onClick = { speechLocaleTag = tag },
-                                label = { Text(name) },
-                                shape = EntryScreenChipShape,
-                            )
+                    var languageMenuExpanded by remember { mutableStateOf(false) }
+                    val selectedLanguageLabel = SpeechInputLocales.OPTIONS
+                        .find { (tag, _) -> tag == speechLocaleTag }
+                        ?.second
+                        ?: speechLocaleTag
+                    ExposedDropdownMenuBox(
+                        expanded = languageMenuExpanded,
+                        onExpandedChange = { languageMenuExpanded = !languageMenuExpanded },
+                    ) {
+                        OutlinedTextField(
+                            value = selectedLanguageLabel,
+                            onValueChange = {},
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            readOnly = true,
+                            singleLine = true,
+                            label = { Text(strings.onboardingLanguageSection) },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded)
+                            },
+                            shape = EntryScreenFieldShape,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                            ),
+                        )
+                        DropdownMenu(
+                            expanded = languageMenuExpanded,
+                            onDismissRequest = { languageMenuExpanded = false },
+                        ) {
+                            SpeechInputLocales.OPTIONS.forEach { (tag, name) ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = {
+                                        speechLocaleTag = tag
+                                        languageMenuExpanded = false
+                                    },
+                                )
+                            }
                         }
                     }
                     Text(
@@ -403,7 +444,9 @@ fun ProfileOnboardingScreen(
                             birthMonth = birthMonth,
                             birthYear = birthYear,
                             assistantSpeechEnabled = assistantSpeechEnabled,
-                            voiceOnboardingComplete = true,
+                            voiceOnboardingComplete = false,
+                            pinSetupComplete = false,
+                            profileOnboardingSubmitted = true,
                         ),
                     )
                 },
@@ -416,8 +459,36 @@ fun ProfileOnboardingScreen(
             ) {
                 Text(strings.onboardingContinue)
             }
+        }
+    }
+
+    if (embeddedInOnboardingShell) {
+        ProfileFormColumn(
+            scrollModifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 20.dp),
+            showWelcomeHeader = false,
+        )
+    } else {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                ProfileFormColumn(
+                    scrollModifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .displayCutoutPadding()
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 24.dp, bottom = 20.dp),
+                    showWelcomeHeader = true,
+                )
+                AiContentDisclaimerBanner(modifier = Modifier.fillMaxWidth())
             }
-            AiContentDisclaimerBanner(modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -617,6 +688,61 @@ fun ModelHardwareUnsupportedScreen(
             }
             }
             AiContentDisclaimerBanner(modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/**
+ * Fixed header (title + optional subtitle + divider) with a weighted body area for onboarding steps.
+ */
+@Composable
+fun OnboardingStepShell(
+    title: String,
+    subtitle: String? = null,
+    modifier: Modifier = Modifier,
+    bottomBar: @Composable () -> Unit = {},
+    content: @Composable (Modifier) -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .displayCutoutPadding()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 8.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                content(Modifier.fillMaxSize())
+            }
+            bottomBar()
         }
     }
 }

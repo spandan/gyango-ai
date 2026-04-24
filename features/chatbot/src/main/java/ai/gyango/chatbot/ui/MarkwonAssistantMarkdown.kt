@@ -3,7 +3,6 @@ package ai.gyango.chatbot.ui
 import android.graphics.drawable.ColorDrawable
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -16,6 +15,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import ai.gyango.chatbot.ui.theme.LocalGyangoAppInDarkTheme
 import android.graphics.Color as AndroidColor
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
@@ -56,9 +56,10 @@ internal fun rememberGyangoMarkwon(
     val textSizePx = with(density) { bodySp.toPx() }
     val textArgb = textColor.toArgb()
     val linkArgb = linkColor.toArgb()
-    val dark = isSystemInDarkTheme()
+    val dark = LocalGyangoAppInDarkTheme.current
     val mathSurface = if (dark) {
-        AndroidColor.argb(38, 255, 255, 255)
+        // Slightly stronger than before so formula chips read on blue-slate assistant bubbles.
+        AndroidColor.argb(48, 255, 255, 255)
     } else {
         AndroidColor.argb(36, 0, 0, 0)
     }
@@ -94,11 +95,13 @@ internal fun AssistantMarkdownTextView(
     textColor: Color,
     bodyStyle: TextStyle,
     modifier: Modifier = Modifier,
+    linkColor: Color? = null,
 ) {
+    val resolvedLink = linkColor ?: MaterialTheme.colorScheme.primary
     val markwon = rememberGyangoMarkwon(
         bodyTextStyle = bodyStyle,
         textColor = textColor,
-        linkColor = MaterialTheme.colorScheme.primary,
+        linkColor = resolvedLink,
     )
     val bodySp = (bodyStyle.fontSize.takeIf { it != TextUnit.Unspecified } ?: 17.sp)
     val mult = if (bodyStyle.fontSize != TextUnit.Unspecified && bodyStyle.lineHeight != TextUnit.Unspecified) {

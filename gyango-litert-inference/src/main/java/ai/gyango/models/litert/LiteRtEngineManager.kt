@@ -465,6 +465,9 @@ class LiteRtEngineManager(private val context: Context) {
     ): Flow<String> {
         val eng = engine ?: throw IllegalStateException("Engine not initialized")
         return flow {
+            // Repetition penalty: litertlm-android 0.10.0 SamplerConfig has no field for it (only topK,
+            // topP, temperature, seed)—decode matches "off" (1.0). If the SDK adds it, use only
+            // LlmDefaults.EDUCATIONAL_REPETITION_PENALTY_OFF or EDUCATIONAL_REPETITION_PENALTY_SLIGHT (see KDoc there).
             val sampler = SamplerConfig(
                 topK = topK,
                 topP = topP,

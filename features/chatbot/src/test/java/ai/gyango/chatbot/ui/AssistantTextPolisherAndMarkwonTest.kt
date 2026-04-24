@@ -34,6 +34,15 @@ class AssistantTextPolisherAndMarkwonTest {
     }
 
     @Test
+    fun polishForMarkdown_preservesLatexCommandsStartingWithT() {
+        val raw = "Equation: \$4\\\\times(8+5)\$ and label \$\\\\text{x}\$."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\\times"))
+        assertTrue(out.contains("\\text{x}"))
+        assertTrue(!out.contains("\times"))
+    }
+
+    @Test
     fun stripInlineMarkdown_removesMarkdownLinks() {
         val s = AssistantTextPolisher.stripInlineMarkdown("See [label](https://x.com) here.")
         assertEquals("See label here.", s)
@@ -82,6 +91,36 @@ class AssistantTextPolisherAndMarkwonTest {
     }
 
     @Test
+    fun polishForMarkdown_insertsSpaceBetweenAdjacentInlineMath() {
+        val raw = "We have \$x+y=10\$\$x-y=6\$."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$x+y=10\$ \$x-y=6\$"))
+    }
+
+    @Test
+    fun polishForMarkdown_insertsSpaceBetweenThreeAdjacentInlineMathSpans() {
+        val raw = "\$a\$\$b\$\$c\$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertEquals("\$a\$ \$b\$ \$c\$", out)
+    }
+
+    @Test
+    fun polishForMarkdown_doesNotInsertSpaceInsideFencedCodeForAdjacentDollars() {
+        val raw = "```\n\$x+y=10\$\$x-y=6\$\n```"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$x+y=10\$\$x-y=6\$"))
+        assertTrue(!out.contains("\$x+y=10\$ \$x-y=6\$"))
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_splitsAfterPolisherAdjacentPair() {
+        val polished = AssistantTextPolisher.polishDisplayTextForMarkdown("\$x+1\$\$y+2\$")
+        val jl = normalizeSingleDollarLatexForJlMath(polished)
+        assertTrue(jl.contains("\$\$x+1\$\$"))
+        assertTrue(jl.contains("\$\$y+2\$\$"))
+    }
+
+    @Test
     fun polishForMarkdown_normalizesInlineFenceOpener() {
         val raw = "```text Step 1: isolate x\nStep 2: divide by 2\n```"
         val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
@@ -121,6 +160,21 @@ class AssistantTextPolisherAndMarkwonTest {
         val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
         assertTrue(out.contains("\$x + 2\$"))
         assertTrue(!out.endsWith("delimiter \$"))
+    }
+
+    @Test
+    fun polishForMarkdown_keepsCurrencyDollarWhenMathDelimitersExist() {
+        val raw = "Price is \$5 today; solve \$x + 1\$ now."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$5"))
+        assertTrue(out.contains("\$x + 1\$"))
+    }
+
+    @Test
+    fun polishForMarkdown_removesTrailingOrphanDollarAfterEquation() {
+        val raw = "8 + 5 = 13\$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertEquals("8 + 5 = 13", out)
     }
 
     @Test

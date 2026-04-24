@@ -39,7 +39,7 @@ data class LearningCheckInQuestion(
     val options: List<String>,
 )
 
-private data class LearningCheckInCopy(
+data class LearningCheckInCopy(
     val promptTitle: String,
     val promptBody: String,
     val whatThisDoesTitle: String,
@@ -68,8 +68,9 @@ private fun ageBandFromBirthYear(birthYear: Int?): Int {
 
 fun learningCheckInQuestionsForAge(birthYear: Int?, localeTag: String): List<LearningCheckInQuestion> {
     val band = ageBandFromBirthYear(birthYear)
-    return (when {
-        localeTag.startsWith("te", ignoreCase = true) -> when (band) {
+    val lang = learningCheckInContentLanguage(localeTag)
+    return (when (lang) {
+        "te" -> when (band) {
             0 -> listOf(
                 LearningCheckInQuestion("మీరు కొత్త విషయం నేర్చుకునేప్పుడు ఏది బాగా నచ్చుతుంది?", listOf("ఒక చిత్రం చూపించండి", "ఒక చిన్న కథ చెప్పండి", "సులభమైన దశలు ఇవ్వండి", "చిన్న సవాలు ప్రయత్నించనివ్వండి")),
                 LearningCheckInQuestion("ఏదైనా కాస్త కష్టం అనిపిస్తే GyanGo ఏమి చేయాలి?", listOf("చాలా సులభంగా చేయాలి", "మజాగా ఒక ఉదాహరణ ఇవ్వాలి", "దశలుగా విడగొట్టాలి", "ఒక చిన్న పజిల్ ఇవ్వాలి")),
@@ -111,7 +112,7 @@ fun learningCheckInQuestionsForAge(birthYear: Int?, localeTag: String): List<Lea
                 LearningCheckInQuestion("GyanGo కి ఏ శైలి బాగుంటుంది?", listOf("శాంతంగా, సులభంగా", "ఆసక్తిగా, లోతుగా", "స్పష్టంగా, ఆచరణాత్మకంగా", "ముక్కుసూటిగా, సవాలుగా")),
             )
         }
-        localeTag.startsWith("hi", ignoreCase = true) -> when (band) {
+        "hi" -> when (band) {
             0 -> listOf(
                 LearningCheckInQuestion("जब आप कुछ नया सीखते हैं, तो क्या सबसे अच्छा लगता है?", listOf("मुझे एक चित्र दिखाइए", "एक छोटी कहानी सुनाइए", "आसान कदम बताइए", "मुझे एक छोटा सा चैलेंज दीजिए")),
                 LearningCheckInQuestion("अगर कुछ थोड़ा मुश्किल लगे, तो GyanGo क्या करे?", listOf("बहुत आसान बना दे", "मज़ेदार उदाहरण दे", "कदमों में तोड़ दे", "एक छोटा पज़ल दे")),
@@ -153,53 +154,15 @@ fun learningCheckInQuestionsForAge(birthYear: Int?, localeTag: String): List<Lea
                 LearningCheckInQuestion("GyanGo के लिए सबसे अच्छा अंदाज़ क्या है?", listOf("शांत और आसान", "जिज्ञासु और गहरा", "साफ और व्यावहारिक", "तेज़ और चुनौतीपूर्ण")),
             )
         }
-        else -> when (band) {
-            0 -> listOf(
-                LearningCheckInQuestion("When you learn something new, what feels best?", listOf("Show me a picture", "Tell me a short story", "Give me easy steps", "Let me try a tiny challenge")),
-                LearningCheckInQuestion("If something feels tricky, what should GyanGo do?", listOf("Make it super simple", "Use a fun example", "Break it into steps", "Give me a puzzle to try")),
-                LearningCheckInQuestion("Which topics sound exciting today?", listOf("Animals and nature", "Space and science", "Numbers and patterns", "Making and building")),
-                LearningCheckInQuestion("How long should answers be?", listOf("Very short", "Short and fun", "A little more", "Give me extra detail")),
-                LearningCheckInQuestion("What helps you understand fastest?", listOf("One idea at a time", "A real-life example", "A how-to list", "A challenge question")),
-                LearningCheckInQuestion("When you ask why something happens, what do you want next?", listOf("A tiny answer", "A fun reason", "A step-by-step reason", "A big deeper reason")),
-                LearningCheckInQuestion("Pick the style you like most.", listOf("Friendly and simple", "Curious and playful", "Clear and step-by-step", "Smart and challenging")),
-                LearningCheckInQuestion("If you get stuck, what should I say?", listOf("It's okay, let's keep it easy", "Let's try a fun example", "Let's solve it step by step", "You're ready for a harder clue")),
-            )
-            1 -> listOf(
-                LearningCheckInQuestion("When you ask a question, what kind of answer do you like first?", listOf("Short and simple", "A fun example", "Step by step", "A bigger challenge")),
-                LearningCheckInQuestion("What helps you learn best?", listOf("Simple words", "Stories and examples", "Clear steps", "Tricky questions to solve")),
-                LearningCheckInQuestion("If something is confusing, what should happen?", listOf("Make it easier", "Use a new example", "Slow it down into parts", "Give me a challenge hint")),
-                LearningCheckInQuestion("Which sounds most like you?", listOf("I like easy explanations", "I like knowing why", "I like solving things", "I like big challenges")),
-                LearningCheckInQuestion("How much detail should answers have?", listOf("Just the main point", "A little more", "Enough to practice", "Extra depth")),
-                LearningCheckInQuestion("What topics pull you in most?", listOf("General wonder questions", "Science and nature", "Math and patterns", "Coding and making")),
-                LearningCheckInQuestion("When GyanGo teaches, what should it do?", listOf("Keep it calm and short", "Use examples I know", "Guide me in steps", "Push me a little more")),
-                LearningCheckInQuestion("When you finish an answer, what do you want next?", listOf("Stop there", "One fun fact", "One extra example", "One challenge question")),
-            )
-            2 -> listOf(
-                LearningCheckInQuestion("What kind of explanation usually helps you most?", listOf("Very clear basics", "Examples that connect ideas", "Step-by-step reasoning", "Challenge me a bit more")),
-                LearningCheckInQuestion("When you ask 'why', what do you really want?", listOf("A simple reason", "A real-life connection", "The logic in steps", "A deeper idea to think about")),
-                LearningCheckInQuestion("How should GyanGo respond if you're stuck?", listOf("Make it easier right away", "Try a different example", "Break it down more carefully", "Give me a stronger hint")),
-                LearningCheckInQuestion("How much challenge feels good?", listOf("Keep it easy", "Mostly comfortable", "A little stretch", "Push me further")),
-                LearningCheckInQuestion("Which area sounds most fun right now?", listOf("Curiosity questions", "Science", "Math", "Coding / building")),
-                LearningCheckInQuestion("How long should most answers be?", listOf("Quick", "Short with one example", "Medium with steps", "Longer with depth")),
-                LearningCheckInQuestion("What style fits you best?", listOf("Gentle and simple", "Curious and thoughtful", "Structured and practical", "Stretch my thinking")),
-                LearningCheckInQuestion("What should happen at the end of a good answer?", listOf("Wrap up simply", "Add one cool fact", "Give me a small next step", "Give me a challenge to try")),
-            )
-            else -> listOf(
-                LearningCheckInQuestion("When learning something new, what helps most?", listOf("Simple overview", "Clear examples", "Reasoning in steps", "Deeper challenge")),
-                LearningCheckInQuestion("What do you want GyanGo to optimize for?", listOf("Clarity", "Curiosity", "Problem solving", "Stretch thinking")),
-                LearningCheckInQuestion("If a topic gets hard, what should happen?", listOf("Simplify it", "Use a relatable example", "Break down the logic", "Keep the challenge but guide me")),
-                LearningCheckInQuestion("How much detail should most answers include?", listOf("Only essentials", "Essentials plus examples", "Enough for practice", "More depth and extension")),
-                LearningCheckInQuestion("Which area feels most like you?", listOf("Explorer", "Thinker", "Builder", "Mix it up with more challenge")),
-                LearningCheckInQuestion("Which topic lane do you reach for first?", listOf("General curiosity", "Science / nature", "Math / patterns", "Coding / creating")),
-                LearningCheckInQuestion("What ending is most useful?", listOf("Short wrap-up", "One good example", "A next practice step", "A stretch question")),
-                LearningCheckInQuestion("What's the best tone for GyanGo?", listOf("Calm and simple", "Curious and insightful", "Clear and practical", "Sharp and challenging")),
-            )
-        }
+        "mr" -> LearningCheckIndicExtras.marathiForBand(band)
+        "ta" -> LearningCheckIndicExtras.tamilForBand(band)
+        in setOf("bn", "gu", "kn", "ml", "pa") -> LearningCheckInEnglishPools.forBand(band)
+        else -> LearningCheckInEnglishPools.forBand(band)
     }).take(5)
 }
 
-private fun learningCheckInCopy(localeTag: String): LearningCheckInCopy = when {
-    localeTag.startsWith("te", ignoreCase = true) -> LearningCheckInCopy(
+fun learningCheckInCopy(localeTag: String): LearningCheckInCopy = when (learningCheckInContentLanguage(localeTag)) {
+    "te" -> LearningCheckInCopy(
         promptTitle = "మీకు బాగా అర్థమయ్యేలా నేర్చుకోవాలా?",
         promptBody = "ఒక చిన్న, సరదా check-in తీసుకుంటే GyanGo మీకు సరిగ్గా సరిపోయేలా వివరిస్తుంది. ఇది స్కూల్ IQ టెస్ట్ కాదు. మీకు నచ్చినట్టు మాత్రమే ఎంచుకోండి. మార్కులు లేవు, ఒత్తిడి లేదు.",
         whatThisDoesTitle = "ఇది ఏమి చేస్తుంది",
@@ -220,7 +183,7 @@ private fun learningCheckInCopy(localeTag: String): LearningCheckInCopy = when {
             "రచన" to SubjectMode.WRITING,
         ),
     )
-    localeTag.startsWith("hi", ignoreCase = true) -> LearningCheckInCopy(
+    "hi" -> LearningCheckInCopy(
         promptTitle = "क्या मैं सीखूँ कि आपको सबसे अच्छे तरीके से कैसे समझाना है?",
         promptBody = "एक छोटा, मज़ेदार check-in लेने से GyanGo आपको आपकी पसंद के हिसाब से समझा पाएगा। यह स्कूल का IQ test नहीं है। बस वही चुनिए जो आपको अपने जैसा लगे। न अंक, न दबाव.",
         whatThisDoesTitle = "यह क्या करता है",
@@ -239,6 +202,153 @@ private fun learningCheckInCopy(localeTag: String): LearningCheckInCopy = when {
             "विज्ञान" to SubjectMode.SCIENCE,
             "कोडिंग" to SubjectMode.CODING,
             "लेखन" to SubjectMode.WRITING,
+        ),
+    )
+    "mr" -> LearningCheckInCopy(
+        promptTitle = "तुम्हाला तुमच्याशी जुळणारी उत्तरं हवी आहेत का?",
+        promptBody = "एक लहान, मजेशीर check-in घेतल्यास GyanGo तुमच्या पद्धतीशी जुळवतो. हा शाळेचा IQ चाचणी नाही. जे जुळते ते निवडा — गुण नाहीत, दडपण नाही.",
+        whatThisDoesTitle = "हे काय करते",
+        whatThisDoesBody = "प्रत्येक मुलासाठी योग्य वेग, उदाहरणं आणि आव्हान निवडण्यास GyanGo ला मदत करते.",
+        laterHint = "हे नंतर Settings मधूनही करू शकता.",
+        startButton = "चला सुरू करूया",
+        skipButton = "आत्ता नको",
+        screenTitle = "जलद learning check-in",
+        screenBody = "तुम्हाला सर्वात योग्य वाटते ते निवडा — चूक किंवा बरोबर नाही.",
+        subjectPrompt = "प्रथम कोणत्या विषयात जास्त मदत हवी?",
+        saveButton = "माझी शैली जतन करा",
+        footer = "पुढील प्रश्नांनुसार GyanGo समायोजित राहील.",
+        subjectChoices = listOf(
+            "जिज्ञासा" to SubjectMode.CURIOSITY,
+            "गणित" to SubjectMode.MATH,
+            "विज्ञान" to SubjectMode.SCIENCE,
+            "कोडिंग" to SubjectMode.CODING,
+            "लेखन" to SubjectMode.WRITING,
+        ),
+    )
+    "ta" -> LearningCheckInCopy(
+        promptTitle = "உங்களுக்குப் பொருந்தும் பதில்கள் வேண்டுமா?",
+        promptBody = "ஒரு சிறிய check-in: GyanGo உங்கள் பாணிக்கு ஏற்ப மாறும். இது பள்ளி IQ தேர்வு அல்ல. பொருந்துவதைத் தேர்ந்தெடுங்கள் — மதிப்பெண் இல்லை, அழுத்தம் இல்லை.",
+        whatThisDoesTitle = "இது என்ன செய்கிறது",
+        whatThisDoesBody = "வேகம், உதாரணங்கள் மற்றும் சவாலை GyanGo தேர்வு செய்ய உதவுகிறது.",
+        laterHint = "இதை பின்னர் Settings இலும் செய்யலாம்.",
+        startButton = "சரி, தொடங்குவோம்",
+        skipButton = "இப்போது வேண்டாம்",
+        screenTitle = "விரைவு learning check-in",
+        screenBody = "உங்களுக்கு மிகப் பொருத்தமானதைத் தேர்ந்தெடுங்கள் — சரி/தவறு இல்லை.",
+        subjectPrompt = "முதலில் எந்தத் தலைப்பில் அதிக உதவி வேண்டும்?",
+        saveButton = "என் பாணியைச் சேமி",
+        footer = "எதிர்கால கேள்விகளின் அடிப்படையில் GyanGo தொடர்ந்து மாறும்.",
+        subjectChoices = listOf(
+            "ஆர்வம்" to SubjectMode.CURIOSITY,
+            "கணிதம்" to SubjectMode.MATH,
+            "அறிவியல்" to SubjectMode.SCIENCE,
+            "குறியீடு" to SubjectMode.CODING,
+            "எழுத்து" to SubjectMode.WRITING,
+        ),
+    )
+    "bn" -> LearningCheckInCopy(
+        promptTitle = "আপনার জন্য মানানসই উত্তর চান?",
+        promptBody = "একটি ছোট check-in নিলে GyanGo আপনার শৈলী বুঝবে। এটি স্কুলের IQ পরীক্ষা নয়। যা মানায় তাই বেছে নিন — নম্বর নেই, চাপ নেই।",
+        whatThisDoesTitle = "এটা কী করে",
+        whatThisDoesBody = "গতি, উদাহরণ ও চ্যালেঞ্জ বেছে নিতে GyanGo-কে সাহায্য করে।",
+        laterHint = "পরে Settings থেকেও করতে পারেন।",
+        startButton = "চলুন শুরু করি",
+        skipButton = "এখন নয়",
+        screenTitle = "দ্রুত learning check-in",
+        screenBody = "আপনার জন্য সবচেয়ে মানানসই বেছে নিন — সঠিক/ভুল নেই।",
+        subjectPrompt = "প্রথমে কোন বিষয়ে বেশি সাহায্য চান?",
+        saveButton = "আমার শৈলী সংরক্ষণ",
+        footer = "ভবিষ্যৎ প্রশ্ন অনুযায়ী GyanGo মানিয়ে নেবে।",
+        subjectChoices = listOf(
+            "কৌতূহল" to SubjectMode.CURIOSITY,
+            "গণিত" to SubjectMode.MATH,
+            "বিজ্ঞান" to SubjectMode.SCIENCE,
+            "কোডিং" to SubjectMode.CODING,
+            "লেখা" to SubjectMode.WRITING,
+        ),
+    )
+    "gu" -> LearningCheckInCopy(
+        promptTitle = "તમારા માટે યોગ્ય જવાબો જોઈએ છે?",
+        promptBody = "એક નાની check-in લઈએ તો GyanGo તમારી શૈલી સાથે મેળ ખાશે. આ સ્કૂલનો IQ ટેસ્ટ નથી. જે ગમે તે પસંદ કરો — ગ્રેડ નહીં, દબાણ નહીં.",
+        whatThisDoesTitle = "આ શું કરે છે",
+        whatThisDoesBody = "ગતિ, ઉદાહરણો અને પડકાર પસંદ કરવામાં GyanGo ને મદદ કરે છે.",
+        laterHint = "પછી Settings માંથી પણ કરી શકાય છે.",
+        startButton = "ચાલો શરૂ કરીએ",
+        skipButton = "હમણાં નહીં",
+        screenTitle = "ઝડપી learning check-in",
+        screenBody = "તમને સૌથી સાચું લાગે તે પસંદ કરો — સાચું/ખોટું નથી.",
+        subjectPrompt = "પહેલા કયા વિષયમાં વધુ મદદ જોઈએ?",
+        saveButton = "મારી શૈલી સાચવો",
+        footer = "આગળના પ્રશ્નો પ્રમાણે GyanGo ઢળતું રહેશે.",
+        subjectChoices = listOf(
+            "જિજ્ઞાસા" to SubjectMode.CURIOSITY,
+            "ગણિત" to SubjectMode.MATH,
+            "વિજ્ઞાન" to SubjectMode.SCIENCE,
+            "કોડિંગ" to SubjectMode.CODING,
+            "લેખન" to SubjectMode.WRITING,
+        ),
+    )
+    "kn" -> LearningCheckInCopy(
+        promptTitle = "ನಿಮಗೆ ಹೊಂದಿಕೆಯಾಗುವ ಉತ್ತರಗಳು ಬೇಕೇ?",
+        promptBody = "ಸಣ್ಣ check-in ಮಾಡಿದರೆ GyanGo ನಿಮ್ಮ ಶೈಲಿಗೆ ಹೊಂದಿಸುತ್ತದೆ. ಇದು ಶಾಲೆಯ IQ ಪರೀಕ್ಷೆ ಅಲ್ಲ. ಹೊಂದುವುದನ್ನು ಆರಿಸಿ — ಅಂಕಗಳಿಲ್ಲ, ಒತ್ತಡವಿಲ್ಲ.",
+        whatThisDoesTitle = "ಇದು ಏನು ಮಾಡುತ್ತದೆ",
+        whatThisDoesBody = "ವೇಗ, ಉದಾಹರಣೆಗಳು ಮತ್ತು ಸವಾಲನ್ನು ಆರಿಸಲು GyanGo ಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆ.",
+        laterHint = "ನಂತರ Settings ನಿಂದಲೂ ಮಾಡಬಹುದು.",
+        startButton = "ಆರಂಭಿಸೋಣ",
+        skipButton = "ಈಗ ಬೇಡ",
+        screenTitle = "ವೇಗದ learning check-in",
+        screenBody = "ನಿಮಗೆ ಹೆಚ್ಚು ಸರಿಯಾಗಿ ಅನಿಸುವುದನ್ನು ಆರಿಸಿ — ಸರಿ/ತಪ್ಪು ಇಲ್ಲ.",
+        subjectPrompt = "ಮೊದಲು ಯಾವ ವಿಷಯದಲ್ಲಿ ಹೆಚ್ಚು ಸಹಾಯ ಬೇಕು?",
+        saveButton = "ನನ್ನ ಶೈಲಿ ಉಳಿಸಿ",
+        footer = "ಮುಂದಿನ ಪ್ರಶ್ನೆಗಳ ಆಧಾರದ ಮೇಲೆ GyanGo ಹೊಂದಿಕೊಳ್ಳುತ್ತದೆ.",
+        subjectChoices = listOf(
+            "ಕುತೂಹಲ" to SubjectMode.CURIOSITY,
+            "ಗಣಿತ" to SubjectMode.MATH,
+            "ವಿಜ್ಞಾನ" to SubjectMode.SCIENCE,
+            "ಕೋಡಿಂಗ್" to SubjectMode.CODING,
+            "ಬರವಣಿಗೆ" to SubjectMode.WRITING,
+        ),
+    )
+    "ml" -> LearningCheckInCopy(
+        promptTitle = "നിങ്ങൾക്ക് പൊരുത്തപ്പെടുന്ന ഉത്തരങ്ങൾ വേണോ?",
+        promptBody = "ഒരു ചെറിയ check-in എടുത്താൽ GyanGo നിങ്ങളുടെ ശൈലിയുമായി പൊരുത്തപ്പെടും. ഇത് സ്കൂളിലെ IQ പരീക്ഷയല്ല. പൊരുത്തപ്പെടുന്നത് തിരഞ്ഞെടുക്കുക — മാർക്കില്ല, സമ്മർദ്ദമില്ല.",
+        whatThisDoesTitle = "ഇത് എന്താണ് ചെയ്യുന്നത്",
+        whatThisDoesBody = "വേഗത, ഉദാഹരണങ്ങൾ, വെല്ലുവിളി തിരഞ്ഞെടുക്കാൻ GyanGo ക്ക് സഹായിക്കുന്നു.",
+        laterHint = "പിന്നീട് Settings ൽ നിന്നും ചെയ്യാം.",
+        startButton = "തുടങ്ങാം",
+        skipButton = "ഇപ്പോൾ വേണ്ട",
+        screenTitle = "വേഗത്തിലുള്ള learning check-in",
+        screenBody = "നിങ്ങൾക്ക് ഏറ്റവും ചേരുന്നത് തിരഞ്ഞെടുക്കുക — ശരി/തെറ്റില്ല.",
+        subjectPrompt = "ആദ്യം ഏത് വിഷയത്തിൽ കൂടുതൽ സഹായം വേണം?",
+        saveButton = "എന്റെ ശൈലി സേവ് ചെയ്യുക",
+        footer = "വരുന്ന ചോദ്യങ്ങളുടെ അടിസ്ഥാനത്തിൽ GyanGo ക്രമീകരിക്കും.",
+        subjectChoices = listOf(
+            "ആഗ്രഹം" to SubjectMode.CURIOSITY,
+            "ഗണിതം" to SubjectMode.MATH,
+            "ശാസ്ത്രം" to SubjectMode.SCIENCE,
+            "കോഡിംഗ്" to SubjectMode.CODING,
+            "എഴുത്ത്" to SubjectMode.WRITING,
+        ),
+    )
+    "pa" -> LearningCheckInCopy(
+        promptTitle = "ਤੁਹਾਨੂੰ ਢੁਕਵੇ ਜਵਾਬ ਚਾਹੀਦੇ ਹਨ?",
+        promptBody = "ਇੱਕ ਛੋਟੀ check-in ਨਾਲ GyanGo ਤੁਹਾਡੀ ਸ਼ੈਲੀ ਨਾਲ ਮੇਲ ਖਾਂਦਾ ਹੈ। ਇਹ ਸਕੂਲ ਦਾ IQ ਟੈਸਟ ਨਹੀਂ। ਜੋ ਢੁਕਦਾ ਹੈ ਚੁਣੋ — ਨੰਬਰ ਨਹੀਂ, ਦਬਾਅ ਨਹੀਂ।",
+        whatThisDoesTitle = "ਇਹ ਕੀ ਕਰਦਾ ਹੈ",
+        whatThisDoesBody = "ਗਤੀ, ਉਦਾਹਰਣਾਂ ਅਤੇ ਚੁਣੌਤੀ ਚੁਣਨ ਵਿੱਚ GyanGo ਦੀ ਮਦਦ ਕਰਦਾ ਹੈ।",
+        laterHint = "ਬਾਅਦ ਵਿੱਚ Settings ਤੋਂ ਵੀ ਕਰ ਸਕਦੇ ਹੋ।",
+        startButton = "ਚਲੋ ਸ਼ੁਰੂ ਕਰੀਏ",
+        skipButton = "ਹੁਣ ਨਹੀਂ",
+        screenTitle = "ਤੇਜ਼ learning check-in",
+        screenBody = "ਜੋ ਤੁਹਾਨੂੰ ਸਭ ਤੋਂ ਠੀਕ ਲੱਗੇ ਚੁਣੋ — ਸਹੀ/ਗਲਤ ਨਹੀਂ।",
+        subjectPrompt = "ਪਹਿਲਾਂ ਕਿਸ ਵਿਸ਼ੇ ਵਿੱਚ ਵੱਧ ਮਦਦ ਚਾਹੀਦੀ ਹੈ?",
+        saveButton = "ਮੇਰੀ ਸ਼ੈਲੀ ਸੇਵ ਕਰੋ",
+        footer = "ਆਉਣ ਵਾਲੇ ਸਵਾਲਾਂ ਅਨੁਸਾਰ GyanGo ਢਲਦਾ ਰਹੇਗਾ।",
+        subjectChoices = listOf(
+            "ਜਿਜ्ञਾਸਾ" to SubjectMode.CURIOSITY,
+            "ਗਣਿਤ" to SubjectMode.MATH,
+            "ਵਿਗਿਆਨ" to SubjectMode.SCIENCE,
+            "ਕੋਡਿੰਗ" to SubjectMode.CODING,
+            "ਲਿਖਤ" to SubjectMode.WRITING,
         ),
     )
     else -> LearningCheckInCopy(
@@ -270,32 +380,29 @@ fun LearningCheckInPromptScreen(
     statusHint: String? = null,
     onStart: () -> Unit,
     onSkip: () -> Unit,
+    /** When true, [OnboardingStepShell] shows title/body; omit outer surface and duplicate headings. */
+    embedInShell: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val copy = remember(localeTag) { learningCheckInCopy(localeTag) }
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
+    @Composable
+    fun PromptBody(columnModifier: Modifier, showIntroHeadings: Boolean) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .displayCutoutPadding()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(top = 24.dp, bottom = 28.dp),
+            modifier = columnModifier,
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Text(
-                text = copy.promptTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = copy.promptBody,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (showIntroHeadings) {
+                Text(
+                    text = copy.promptTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = copy.promptBody,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             statusHint?.let { hint ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -360,6 +467,33 @@ fun LearningCheckInPromptScreen(
             }
         }
     }
+
+    if (embedInShell) {
+        PromptBody(
+            columnModifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 28.dp),
+            showIntroHeadings = false,
+        )
+    } else {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            PromptBody(
+                columnModifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .displayCutoutPadding()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 24.dp, bottom = 28.dp),
+                showIntroHeadings = true,
+            )
+        }
+    }
 }
 
 @Composable
@@ -370,36 +504,32 @@ fun LearningCheckInScreen(
     statusHint: String? = null,
     onComplete: (answers: List<Int>, subjectPreferences: List<SubjectMode>) -> Unit,
     onSkip: () -> Unit,
+    embedInShell: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val copy = remember(localeTag) { learningCheckInCopy(localeTag) }
     val questions = remember(birthYear, localeTag) { learningCheckInQuestionsForAge(birthYear, localeTag) }
     val selectedAnswers = remember(questions) { mutableStateListOf(*IntArray(questions.size) { -1 }.toTypedArray()) }
     val selectedSubjects = remember { mutableStateListOf<SubjectMode>() }
     val subjectChoices = copy.subjectChoices
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-    ) {
+    @Composable
+    fun CheckInBody(columnModifier: Modifier, showScreenIntro: Boolean) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .displayCutoutPadding()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(top = 24.dp, bottom = 24.dp),
+            modifier = columnModifier,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                text = copy.screenTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = copy.screenBody,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (showScreenIntro) {
+                Text(
+                    text = copy.screenTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = copy.screenBody,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             statusHint?.let { hint ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -510,6 +640,33 @@ fun LearningCheckInScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
+            )
+        }
+    }
+
+    if (embedInShell) {
+        CheckInBody(
+            columnModifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 24.dp),
+            showScreenIntro = false,
+        )
+    } else {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            CheckInBody(
+                columnModifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .displayCutoutPadding()
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 24.dp, bottom = 24.dp),
+                showScreenIntro = true,
             )
         }
     }

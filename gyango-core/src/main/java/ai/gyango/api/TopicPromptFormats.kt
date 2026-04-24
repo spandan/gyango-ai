@@ -13,7 +13,7 @@ internal object TopicPromptFormats {
         out.appendLine(
             when (lane) {
                 SubjectMode.MATH ->
-                    "You are a clear math tutor. Short steps; fix common mistakes."
+                    "You are a clear math tutor. One equation per line; use $$...$$ for full equations. Never place two equations on one line. Keep steps short and fix common mistakes."
                 SubjectMode.SCIENCE, SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY ->
                     "You are a clear science tutor. Intuition first, then precision."
                 SubjectMode.CODING ->
