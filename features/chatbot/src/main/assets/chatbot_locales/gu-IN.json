@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "સેટિંગ્સ",
+  "settingsConversationLanguage": "વાર્તાલાપ ભાષા",
+  "settingsConversationLanguageHint": "સહાયકના જવાબો, સ્ક્રીન લખાણ અને વૉઇસ ઇનપુટ માટેની ભાષા. બદલ્યા પછી નવા સંદેશાઓ પર લાગુ પડે છે.",
+  "settingsSpeechPickerTitle": "વાર્તાલાપ ભાષા",
+  "settingsChangeConversationLanguage": "ભાષા બદલો",
+  "settingsHubTitle": "સેટિંગ્સ",
+  "settingsHubProfileTitle": "વપરાશકર્તા પ્રોફાઇલ",
+  "settingsHubChatTitle": "ચેટ અને મોડલ",
+  "settingsProfileTitle": "વપરાશકર્તા પ્રોફાઇલ",
+  "settingsChatTitle": "ચેટ અને મોડલ",
+  "settingsBack": "પાછળ",
+  "settingsClose": "બંધ કરો",
+  "onboardingLanguageSection": "ભાષા",
+  "onboardingContinue": "ચાલુ રાખો"
+}

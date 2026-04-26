@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.gyango.assistant.AssistantOutput
 import ai.gyango.assistant.AssistantTextPolisher
+import ai.gyango.assistant.ExamPrepCoachState
 import ai.gyango.assistant.GyangoOutputEnvelope
 private val BlockSpacing = 4.dp
 
@@ -86,6 +89,13 @@ fun AssistantReadableText(
     onSparkChipClick: ((String) -> Unit)? = null,
     /** When false (e.g. while the model is generating), spark chips are not tappable. */
     sparkChipsEnabled: Boolean = true,
+    /**
+     * When true (Exam Prep lane), splits markdown at `### Next Question` into a compact Review card
+     * and a primary “Next question” block after streaming completes.
+     */
+    splitExamReviewAndNextQuestion: Boolean = false,
+    /** Optional exam difficulty label shown next to the question heading (e.g. "Lv 2.5"). */
+    examPrepLevelLabel: String? = null,
 ) {
     val structureSource = rawEnvelopeForLessonParsing?.takeIf { it.isNotBlank() } ?: raw
     val presentation = remember(structureSource) {
@@ -109,6 +119,16 @@ fun AssistantReadableText(
             AssistantTextPolisher.plainTextForAssistantSpeech(raw)
         } else {
             ""
+        }
+    }
+    val examReviewNext = remember(splitExamReviewAndNextQuestion, streamInProgress, presentation, raw) {
+        if (!splitExamReviewAndNextQuestion || streamInProgress) {
+            null
+        } else {
+            val body = presentation.sections.firstOrNull { it.isNotBlank() }
+                ?: raw.trim()
+            val (review, next) = ExamPrepCoachState.splitDisplayAtNextQuestion(body)
+            if (next.isNullOrBlank()) null else review to next
         }
     }
     Column(
@@ -143,20 +163,82 @@ fun AssistantReadableText(
             )
         }
         if (!streamInProgress) {
-            presentation.sections.forEachIndexed { index, sectionText ->
-                if (sectionText.isBlank()) return@forEachIndexed
-                key(index, sectionText) {
-                    val markdown = remember(sectionText) {
-                        normalizeSingleDollarLatexForJlMath(stripLessonParagraphDecor(sectionText))
-                    }
-                    Column(modifier = Modifier.padding(bottom = 12.dp)) {
-                        AssistantMarkdownTextView(
-                            markdown = markdown,
-                            textColor = textColor,
-                            linkColor = resolvedAccent,
-                            bodyStyle = bodyStyle,
-                            modifier = Modifier.fillMaxWidth(),
+            val examPair = examReviewNext
+            if (examPair != null) {
+                val (reviewMd, nextMd) = examPair
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    val reviewPolished = remember(reviewMd) {
+                        normalizeSingleDollarLatexForJlMath(
+                            stripLessonParagraphDecor(reviewMd)
+                                .replace(Regex("""(?mi)^\s*###\s+Feedback\s*$\n?"""), "")
+                                .trim(),
                         )
+                    }
+                    if (reviewPolished.isNotBlank()) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        ) {
+                            AssistantMarkdownTextView(
+                                markdown = reviewPolished,
+                                textColor = textColor,
+                                linkColor = resolvedAccent,
+                                bodyStyle = bodyStyle,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    val nextPolished = remember(nextMd) {
+                        normalizeSingleDollarLatexForJlMath(stripLessonParagraphDecor(nextMd))
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Question",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = resolvedSecondary,
+                        )
+                        examPrepLevelLabel?.trim()?.takeIf { it.isNotEmpty() }?.let { level ->
+                            Text(
+                                text = level,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFF2E7D32),
+                            )
+                        }
+                    }
+                    AssistantMarkdownTextView(
+                        markdown = nextPolished,
+                        textColor = textColor,
+                        linkColor = resolvedAccent,
+                        bodyStyle = bodyStyle,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else {
+                presentation.sections.forEachIndexed { index, sectionText ->
+                    if (sectionText.isBlank()) return@forEachIndexed
+                    key(index, sectionText) {
+                        val markdown = remember(sectionText) {
+                            normalizeSingleDollarLatexForJlMath(stripLessonParagraphDecor(sectionText))
+                        }
+                        Column(modifier = Modifier.padding(bottom = 12.dp)) {
+                            AssistantMarkdownTextView(
+                                markdown = markdown,
+                                textColor = textColor,
+                                linkColor = resolvedAccent,
+                                bodyStyle = bodyStyle,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }

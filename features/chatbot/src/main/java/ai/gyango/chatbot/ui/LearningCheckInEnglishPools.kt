@@ -31,18 +31,18 @@ object LearningCheckInEnglishPools {
             LearningCheckInQuestion("When you ask 'why', what do you really want?", listOf("A simple reason", "A real-life connection", "The logic in steps", "A deeper idea to think about")),
             LearningCheckInQuestion("How should GyanGo respond if you're stuck?", listOf("Make it easier right away", "Try a different example", "Break it down more carefully", "Give me a stronger hint")),
             LearningCheckInQuestion("How much challenge feels good?", listOf("Keep it easy", "Mostly comfortable", "A little stretch", "Push me further")),
-            LearningCheckInQuestion("Which area sounds most fun right now?", listOf("Curiosity questions", "Science", "Math", "Coding / building")),
+            LearningCheckInQuestion("Which area sounds most fun right now?", listOf("General / mixed topics", "Science", "Math", "Coding / building")),
             LearningCheckInQuestion("How long should most answers be?", listOf("Quick", "Short with one example", "Medium with steps", "Longer with depth")),
             LearningCheckInQuestion("What style fits you best?", listOf("Gentle and simple", "Curious and thoughtful", "Structured and practical", "Stretch my thinking")),
             LearningCheckInQuestion("What should happen at the end of a good answer?", listOf("Wrap up simply", "Add one cool fact", "Give me a small next step", "Give me a challenge to try")),
         )
         else -> listOf(
             LearningCheckInQuestion("When learning something new, what helps most?", listOf("Simple overview", "Clear examples", "Reasoning in steps", "Deeper challenge")),
-            LearningCheckInQuestion("What do you want GyanGo to optimize for?", listOf("Clarity", "Curiosity", "Problem solving", "Stretch thinking")),
+            LearningCheckInQuestion("What do you want GyanGo to optimize for?", listOf("Clarity", "Exploration", "Problem solving", "Stretch thinking")),
             LearningCheckInQuestion("If a topic gets hard, what should happen?", listOf("Simplify it", "Use a relatable example", "Break down the logic", "Keep the challenge but guide me")),
             LearningCheckInQuestion("How much detail should most answers include?", listOf("Only essentials", "Essentials plus examples", "Enough for practice", "More depth and extension")),
             LearningCheckInQuestion("Which area feels most like you?", listOf("Explorer", "Thinker", "Builder", "Mix it up with more challenge")),
-            LearningCheckInQuestion("Which topic lane do you reach for first?", listOf("General curiosity", "Science / nature", "Math / patterns", "Coding / creating")),
+            LearningCheckInQuestion("Which topic lane do you reach for first?", listOf("General topics", "Science / nature", "Math / patterns", "Coding / creating")),
             LearningCheckInQuestion("What ending is most useful?", listOf("Short wrap-up", "One good example", "A next practice step", "A stretch question")),
             LearningCheckInQuestion("What's the best tone for GyanGo?", listOf("Calm and simple", "Curious and insightful", "Clear and practical", "Sharp and challenging")),
         )

@@ -173,10 +173,10 @@ fun OnboardingWelcomeScreen(
 }
 
 /**
- * First-run profile: given name, family name, and conversation language. Shown after the device
+ * First-run profile: profile name and conversation language. Shown after the device
  * passes the GPU/NPU gate and before PAD download (if applicable) or chat.
  *
- * @param onProfileDraft Called after typing pauses so names and language persist before "Continue".
+ * @param onProfileDraft Called after typing pauses so profile fields and language persist before "Continue".
  */
 @OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -194,9 +194,7 @@ fun ProfileOnboardingScreen(
     embeddedInOnboardingShell: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    var first by remember(settings.userFirstName) { mutableStateOf(settings.userFirstName) }
-    var last by remember(settings.userLastName) { mutableStateOf(settings.userLastName) }
-    var email by remember(settings.userEmail) { mutableStateOf(settings.userEmail) }
+    var profileName by remember(settings.userProfileName) { mutableStateOf(settings.userProfileName) }
     var birthMonth by remember(settings.birthMonth) { mutableStateOf(settings.birthMonth) }
     var birthYear by remember(settings.birthYear) { mutableStateOf(settings.birthYear) }
     var speechLocaleTag by remember(settings.speechInputLocaleTag) { mutableStateOf(settings.speechInputLocaleTag) }
@@ -212,16 +210,10 @@ fun ProfileOnboardingScreen(
     LaunchedEffect(settings.birthYear) {
         birthYear = settings.birthYear
     }
-    LaunchedEffect(settings.userEmail) {
-        email = settings.userEmail
-    }
-
     LaunchedEffect(Unit) {
         snapshotFlow {
             listOf(
-                first,
-                last,
-                email,
+                profileName,
                 speechLocaleTag,
                 birthMonth?.toString().orEmpty(),
                 birthYear?.toString().orEmpty(),
@@ -233,9 +225,10 @@ fun ProfileOnboardingScreen(
             .collect {
                 onProfileDraft(
                     settings.copy(
-                        userFirstName = first.trim(),
-                        userLastName = last.trim(),
-                        userEmail = email.trim(),
+                        userProfileName = profileName.trim(),
+                        userFirstName = "",
+                        userLastName = "",
+                        userEmail = "",
                         speechInputLocaleTag = speechLocaleTag,
                         birthMonth = birthMonth,
                         birthYear = birthYear,
@@ -298,37 +291,9 @@ fun ProfileOnboardingScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedTextField(
-                        value = first,
-                        onValueChange = { first = it },
-                        label = { Text(strings.onboardingFirstNameLabel) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = EntryScreenFieldShape,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                        ),
-                    )
-                    OutlinedTextField(
-                        value = last,
-                        onValueChange = { last = it },
-                        label = { Text(strings.onboardingLastNameLabel) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = EntryScreenFieldShape,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                        ),
-                    )
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text(strings.profileEmailLabel) },
+                        value = profileName,
+                        onValueChange = { profileName = it },
+                        label = { Text(strings.onboardingProfileNameLabel.ifBlank { strings.onboardingFirstNameLabel }) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = EntryScreenFieldShape,
@@ -432,14 +397,15 @@ fun ProfileOnboardingScreen(
             }
 
             Spacer(modifier = Modifier.height(4.dp))
-            val canContinue = first.trim().isNotEmpty() && last.trim().isNotEmpty()
+            val canContinue = profileName.trim().isNotEmpty()
             Button(
                 onClick = {
                     onComplete(
                         settings.copy(
-                            userFirstName = first.trim(),
-                            userLastName = last.trim(),
-                            userEmail = email.trim(),
+                            userProfileName = profileName.trim(),
+                            userFirstName = "",
+                            userLastName = "",
+                            userEmail = "",
                             speechInputLocaleTag = speechLocaleTag,
                             birthMonth = birthMonth,
                             birthYear = birthYear,

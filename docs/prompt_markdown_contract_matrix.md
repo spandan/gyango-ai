@@ -1,9 +1,14 @@
 # Prompt And Markdown Contract Matrix
 
 This document is the canonical contract between:
-- prompt generation (`PromptBuilder`, `TopicPromptFormats`),
+- prompt generation (`PromptBuilder`, packaged prompt assets `features/chatbot/src/main/assets/prompts/gemma4_e2b_<topic>.txt`),
 - output parsing (`GyangoOutputEnvelope`, `AssistantParsingPipeline`),
 - rendering (`AssistantTextPolisher`, `MarkwonAssistantMarkdown`).
+
+Prompt source-of-truth is file-based per model+version+topic. `PromptBuilder` selects templates by
+`prompts/<version>/<model_family>_<topic>.txt` and only performs placeholder rendering.
+Current runtime policy is version-first with fallback: active version (`v2`) -> `v1` -> legacy
+`prompts/<model_family>_<topic>.txt` -> in-code fallback constants.
 
 ## Global Contract
 
@@ -38,14 +43,6 @@ This document is the canonical contract between:
 - Topic validation:
   - no mandatory code/math fences.
 
-### CURIOSITY
-- Activation: `DISCOVERY_GENERALIST_MODE`
-- Domain: `GENERAL_KNOWLEDGE_AND_INTERDISCIPLINARY_EXPLORATION`
-- Lesson markdown expectations:
-  - concise answer plus one curiosity hook.
-- Topic validation:
-  - no mandatory code/math fences.
-
 ### MATH
 - Activation: `MATHEMATICAL_REASONING_ENGINE`
 - Domain: `ALGEBRAIC_LOGIC_AND_SYMBOLIC_PRECISION`
@@ -61,32 +58,6 @@ This document is the canonical contract between:
 - Lesson markdown expectations:
   - clear first-principles prose,
   - variables/formulas may use `$...$`.
-- Topic validation:
-  - no hard code-fence requirement.
-
-### PHYSICS
-- Activation: `PHYSICS_REASONING_MODE`
-- Domain: `MOTION_FORCES_ENERGY_AND_FIELDS`
-- Lesson markdown expectations:
-  - equations in `$...$` / `$$...$$`,
-  - units and variable names explicit.
-- Topic validation:
-  - equation-friendly markdown allowed and preserved.
-
-### CHEMISTRY
-- Activation: `CHEMISTRY_REASONING_MODE`
-- Domain: `ATOMS_BONDS_REACTIONS_AND_STOICHIOMETRY`
-- Lesson markdown expectations:
-  - chemical formulas and variables in `$...$`,
-  - stepwise balancing/reaction logic in fenced `text` block when multi-step.
-- Topic validation:
-  - chemistry symbols and formulas must survive sanitation.
-
-### BIOLOGY
-- Activation: `BIOLOGY_REASONING_MODE`
-- Domain: `LIFE_SYSTEMS_CELLS_GENETICS_AND_ECOLOGY`
-- Lesson markdown expectations:
-  - explanatory prose with clear terminology.
 - Topic validation:
   - no hard code-fence requirement.
 
@@ -140,3 +111,19 @@ This document is the canonical contract between:
   - fenced code streaming behavior,
   - JSON at line start in coding contexts,
   - writing separators (`***`) and preserved blockquote semantics.
+
+## Exam Prep Updates (Current)
+
+- Prompt contract now uses supportive coaching language with `### Feedback` and `### Next Question`.
+- Exam turn input now includes prior question replay for grading:
+  - `M: {{MEMORY}}`
+  - `Q: {{EXAM_PRIOR_QUESTION}}`
+  - `U: {{USER_TEXT}}`
+- Exam metadata tail now uses:
+  - `CONTEXT: [Question: <num>] [Level: <current_diff>] [Status: <Correct/Incorrect/Complete>]`
+- Parsing updates:
+  - `Level` supports decimal values (e.g. `2.5`) for +0.5 progression.
+  - Question progression is coerced to monotonic increment if the model repeats/decrements.
+- Display polish updates:
+  - strips leaked inline `[Question: k]` tags from user-visible markdown,
+  - removes extra blank lines directly after `###` headings (feedback/question spacing cleanup).

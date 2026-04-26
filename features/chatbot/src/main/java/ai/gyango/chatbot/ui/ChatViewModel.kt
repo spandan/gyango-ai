@@ -13,8 +13,10 @@ import ai.gyango.core.SubjectModeAutoRouter
 import ai.gyango.core.SubjectModeRouting
 import ai.gyango.assistant.AssistantLlmSanitizer
 import ai.gyango.assistant.AssistantOutput
+import ai.gyango.assistant.ExamPrepCoachState
 import ai.gyango.assistant.GyangoOutputEnvelope
 import ai.gyango.assistant.KidsSafetyPolicy
+import ai.gyango.assistant.SafetyDecision
 import ai.gyango.chatbot.data.ChatRepository
 import ai.gyango.chatbot.data.ImageTextExtractor
 import ai.gyango.core.ChatMessage
@@ -68,6 +70,8 @@ class ChatViewModel(
         private const val TAG = "ChatViewModel"
         private const val IMAGE_OCR_MAX_CHARS = 5000
         private const val IMAGE_OCR_CONTEXT_TURNS = 3
+        private const val PROMPT_MODEL_FAMILY = PromptBuilder.DEFAULT_PROMPT_MODEL_FAMILY
+        private val PROMPT_TEMPLATE_VERSION = PromptBuilder.ACTIVE_PROMPT_TEMPLATE_VERSION
         private val IMAGE_UPLOAD_SPARKS_CSV = listOf(
             "Solve the problem from the attached image",
             "Interpret the text from attached image and summarize it for me",
@@ -79,6 +83,8 @@ class ChatViewModel(
          * How often the stream flush loop wakes while tokens arrive (keeps shutdown responsive).
          */
         private const val STREAM_UI_FLUSH_MS = 33L
+
+        private val EXAM_PREP_QUESTION_OPTIONS = setOf(10, 20, 30)
 
         /**
          * When true, skip [parseForDisplay] on each tick while tokens arrive; run once after the stream ends
@@ -120,15 +126,64 @@ class ChatViewModel(
      */
     private var conversationMemorySubject: SubjectMode? = null
 
+    /**
+     * After a topic-tile change we keep prior turns on disk as [topicSessionHistoryPrefix] and show
+     * only [_messages] in the UI; persistence uses prefix + session so we never call
+     * [ChatRepository.clearHistory] for a topic switch.
+     */
+    private var useTopicSessionHistoryMerge: Boolean = false
+    private var topicSessionHistoryPrefix: List<ChatMessage> = emptyList()
+
+    /** Topic changed mid-generation; run [evictTopicSwitchSessionUiAndKvCache] after the stream ends. */
+    private var deferredTopicSwitchEviction: Boolean = false
+
+    private fun snapshotMessagesForPersistence(): List<ChatMessage> =
+        if (useTopicSessionHistoryMerge) topicSessionHistoryPrefix + _messages.value
+        else _messages.value
+
+    private suspend fun persistChatHistorySnapshot() {
+        repository.saveHistory(snapshotMessagesForPersistence())
+    }
+
+    private fun applyMaxMessageIdsFromFlow(list: List<ChatMessage>) {
+        val fromFlow = list.maxOfOrNull { it.id } ?: 0L
+        val fromPrefix = topicSessionHistoryPrefix.maxOfOrNull { it.id } ?: 0L
+        val fromUi = _messages.value.maxOfOrNull { it.id } ?: 0L
+        val cur = idGenerator.get()
+        idGenerator.set(listOf(fromFlow, fromPrefix, fromUi, cur).max())
+    }
+
+    /**
+     * Clears on-screen chat for a new topic and drops the LiteRT engine so runtime KV is not carried
+     * across topics. Does not remove persisted history (see [useTopicSessionHistoryMerge]).
+     */
+    private fun evictTopicSwitchSessionUiAndKvCache() {
+        if (useTopicSessionHistoryMerge) {
+            topicSessionHistoryPrefix = topicSessionHistoryPrefix + _messages.value
+        } else {
+            useTopicSessionHistoryMerge = true
+            topicSessionHistoryPrefix = _messages.value.toList()
+        }
+        _messages.value = emptyList()
+        pendingImageContextForNextPrompt = null
+        pendingImageContextTurnsRemaining = 0
+        viewModelScope.launch {
+            runCatching { orchestrator.unloadDefaultModelFromMemory() }
+                .onFailure { e ->
+                    Log.w(TAG, "unload default model after topic change: ${e.message}")
+                }
+        }
+    }
+
     private fun subjectMemoryKey(mode: SubjectMode?): SubjectMode = when (SubjectModeRouting.effectiveSubjectMode(mode)) {
-        null, SubjectMode.GENERAL, SubjectMode.CURIOSITY -> SubjectMode.GENERAL
+        null, SubjectMode.GENERAL -> SubjectMode.GENERAL
         else -> SubjectModeRouting.effectiveSubjectMode(mode)!!
     }
 
     private fun interestSubjectKeyForSettings(mode: SubjectMode?): String {
         val eff = SubjectModeRouting.effectiveSubjectMode(mode)
         return when (eff) {
-            null, SubjectMode.GENERAL, SubjectMode.CURIOSITY -> SubjectMode.GENERAL.name
+            null, SubjectMode.GENERAL -> SubjectMode.GENERAL.name
             else -> eff.name
         }
     }
@@ -187,6 +242,63 @@ class ChatViewModel(
     private val _modelLoadError = MutableStateFlow<String?>(null)
     val modelLoadError: StateFlow<String?> = _modelLoadError.asStateFlow()
 
+    private val _examPrepWizardDraft = MutableStateFlow(ExamPrepWizardDraft())
+    val examPrepWizardDraft: StateFlow<ExamPrepWizardDraft> = _examPrepWizardDraft.asStateFlow()
+
+    private val _examPrepSessionConfig = MutableStateFlow<ExamPrepSessionConfig?>(null)
+
+    private val _examPrepSetupError = MutableStateFlow<String?>(null)
+    val examPrepSetupError: StateFlow<String?> = _examPrepSetupError.asStateFlow()
+
+    private fun resetExamPrepLocalState() {
+        _examPrepWizardDraft.value = ExamPrepWizardDraft()
+        _examPrepSessionConfig.value = null
+        _examPrepSetupError.value = null
+    }
+
+    /** Clears the inline error shown on the Exam Prep setup card. */
+    fun dismissExamPrepSetupError() {
+        _examPrepSetupError.value = null
+    }
+
+    fun setExamPrepLane(lane: ExamPrepContentLane) {
+        _examPrepWizardDraft.value = ExamPrepWizardDraft(lane = lane, subtopic = null)
+        _examPrepSetupError.value = null
+    }
+
+    fun setExamPrepSubtopic(text: String) {
+        val lane = _examPrepWizardDraft.value.lane ?: return
+        _examPrepWizardDraft.value = ExamPrepWizardDraft(lane = lane, subtopic = text.trim())
+        _examPrepSetupError.value = null
+    }
+
+    /**
+     * Final wizard step: validates sub-topic (kids safety), stores session config for prompts, then
+     * sends the usual exam bootstrap user line to start the LLM.
+     */
+    fun submitExamPrepQuestionCount(count: Int) {
+        if (_isGenerating.value) return
+        if (_settings.value.subjectMode != SubjectMode.EXAM_PREP) return
+        if (_messages.value.isNotEmpty()) return
+        if (count !in EXAM_PREP_QUESTION_OPTIONS) return
+        val draft = _examPrepWizardDraft.value
+        val lane = draft.lane ?: return
+        val sub = draft.subtopic?.trim().orEmpty()
+        if (sub.isBlank()) return
+        val safety = KidsSafetyPolicy.screenInput(sub, _settings.value.safetyProfile)
+        if (safety.decision != SafetyDecision.ALLOW) {
+            _examPrepSetupError.value = safety.safeReply?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "That focus could not be used. Try different wording."
+            return
+        }
+        _examPrepSessionConfig.value = ExamPrepSessionConfig(
+            lane = lane,
+            subtopic = sub,
+            questionCount = count,
+        )
+        onUserSend(ExamPrepCoachState.bootstrapUserText(), fromSparkChip = false)
+    }
+
     init {
         viewModelScope.launch {
             repository.settingsFlow.collect { persisted ->
@@ -198,10 +310,11 @@ class ChatViewModel(
         viewModelScope.launch {
             repository.historyFlow.collect { list ->
                 if (!_isGenerating.value) {
-                    _messages.value = list
+                    if (!useTopicSessionHistoryMerge) {
+                        _messages.value = list
+                    }
                 }
-                val maxId = list.maxOfOrNull { it.id } ?: 0L
-                idGenerator.set(maxId)
+                applyMaxMessageIdsFromFlow(list)
             }
         }
     }
@@ -314,7 +427,7 @@ class ChatViewModel(
         )
         _messages.value = _messages.value + listOf(userMessage, assistantMessage)
         viewModelScope.launch {
-            repository.saveHistory(_messages.value)
+            persistChatHistorySnapshot()
         }
     }
 
@@ -373,10 +486,11 @@ class ChatViewModel(
         return if (idx >= 0) trimmed[idx].text.trim() else ""
     }
 
-    /** Prior turn `CONTEXT >>` for the next `M:` line (same subject lane as this prompt). */
+    /**
+     * Single-turn `M:` hint: last completed assistant’s parsed CONTEXT line only (no sliding history).
+     * Exam prep always supplies a line—bootstrap on first turn, then the prior assistant CONTEXT string.
+     */
     private fun memoryForNextPrompt(messages: List<ChatMessage>, routedSubject: SubjectMode): String? {
-        val currentKey = subjectMemoryKey(routedSubject)
-        if (conversationMemorySubject == null || conversationMemorySubject != currentKey) return null
         val trimmed = if (messages.isNotEmpty() &&
             messages.last().sender == Sender.ASSISTANT &&
             messages.last().text.isBlank()
@@ -385,8 +499,6 @@ class ChatViewModel(
         } else {
             messages
         }
-        // Prefer the latest lesson-shaped assistant row so short UI hints (e.g. image attachment nudges)
-        // do not steal the memory slot from the prior real answer.
         val structured = trimmed.lastOrNull { m ->
             m.sender == Sender.ASSISTANT &&
                 m.text.isNotBlank() &&
@@ -395,7 +507,35 @@ class ChatViewModel(
         }
         val source = structured
             ?: trimmed.lastOrNull { it.sender == Sender.ASSISTANT && it.text.isNotBlank() }
-        return source?.outputContext?.trim()?.takeIf { it.isNotBlank() }
+        val fromField = source?.outputContext?.trim()?.takeIf { it.isNotBlank() }
+        val fromRaw = source?.let { msg ->
+            val raw = msg.rawAssistantEnvelope?.takeIf { it.isNotBlank() } ?: msg.text
+            GyangoOutputEnvelope.parseContextForNextTurn(raw)?.trim()?.takeIf { it.isNotBlank() }
+        }
+        val merged = fromField ?: fromRaw
+        if (routedSubject == SubjectMode.EXAM_PREP) {
+            return merged ?: ExamPrepCoachState.BOOTSTRAP_MEMORY
+        }
+        val currentKey = subjectMemoryKey(routedSubject)
+        if (conversationMemorySubject == null || conversationMemorySubject != currentKey) return null
+        return merged
+    }
+
+    /** Last visible "next question" text from the previous assistant exam turn (if present). */
+    private fun priorExamQuestionForPrompt(messages: List<ChatMessage>, routedSubject: SubjectMode): String? {
+        if (routedSubject != SubjectMode.EXAM_PREP) return null
+        val trimmed = if (
+            messages.isNotEmpty() &&
+            messages.last().sender == Sender.ASSISTANT &&
+            messages.last().text.isBlank()
+        ) {
+            messages.dropLast(1)
+        } else {
+            messages
+        }
+        val lastAssistant = trimmed.lastOrNull { it.sender == Sender.ASSISTANT && it.text.isNotBlank() } ?: return null
+        val displayMarkdown = lastAssistant.text.trim().takeIf { it.isNotBlank() } ?: return null
+        return ExamPrepCoachState.extractLatestNextQuestion(displayMarkdown)
     }
 
     private fun generateAssistantResponse() {
@@ -427,7 +567,21 @@ class ChatViewModel(
             _settings.value.learnerProfile.starterCheckInCompleted,
         )
         val memoryHint = memoryForNextPrompt(currentMessages, routedSubject)
+        val priorExamQuestion = priorExamQuestionForPrompt(currentMessages, routedSubject)
         val promptTopic = PromptBuilder.topicLabelForPrompt(routedSubject)
+        val examCfg = _examPrepSessionConfig.value
+        val examLaneStr: String? =
+            if (routedSubject == SubjectMode.EXAM_PREP && examCfg != null) examCfg.lane.promptLabel else null
+        val examSubtopicStr: String? =
+            if (routedSubject == SubjectMode.EXAM_PREP && examCfg != null) examCfg.subtopic else null
+        val examCount: Int? =
+            if (routedSubject == SubjectMode.EXAM_PREP && examCfg != null) examCfg.questionCount else null
+        val promptTemplateCandidates = PromptBuilder.promptTemplateAssetPathCandidates(
+            mode = routedSubject,
+            promptModelFamily = PROMPT_MODEL_FAMILY,
+            promptTemplateVersion = PROMPT_TEMPLATE_VERSION,
+        )
+        var resolvedPromptTemplateAssetPath: String? = null
         val prompt = PromptBuilder.buildChatPrompt(
             lastUserContent = lastUserOnly,
             memoryHint = memoryHint,
@@ -440,6 +594,19 @@ class ChatViewModel(
             userPreferenceModeLine = preferenceLine,
             difficultyLevel = difficultyForTelemetry,
             requestThoughtHints = _settings.value.requestModelThoughtInJson,
+            promptModelFamily = PROMPT_MODEL_FAMILY,
+            promptTemplateVersion = PROMPT_TEMPLATE_VERSION,
+            loadPromptTemplate = { assetPath ->
+                runCatching {
+                    appContext.assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { it.readText() }
+                }.getOrNull()?.also {
+                    resolvedPromptTemplateAssetPath = assetPath
+                }
+            },
+            examPrepTopicLane = examLaneStr,
+            examPrepSubtopic = examSubtopicStr,
+            examPrepQuestionTarget = examCount,
+            examPrepPriorQuestion = priorExamQuestion,
         )
         val reqId = assistantMessageId
         val startedAtMs = System.currentTimeMillis()
@@ -453,7 +620,13 @@ class ChatViewModel(
                     "locale=${_settings.value.speechInputLocaleTag} " +
                     "subjectMode=${routedSubject} autoRoute=${_settings.value.autoRouteSubject}"
             )
-            Log.i(TAG, "========== TOPIC=$promptTopic routed=$routedSubject ==========")
+            Log.i(
+                TAG,
+                "========== TOPIC=$promptTopic routed=$routedSubject " +
+                    "activePromptVersion=${PROMPT_TEMPLATE_VERSION.token} " +
+                    "resolvedTemplate=${resolvedPromptTemplateAssetPath ?: "INLINE_FALLBACK"} " +
+                    "candidates=$promptTemplateCandidates ==========",
+            )
         }
 
         val capturedUserTextForInterest = lastUserOnly.trim()
@@ -465,7 +638,7 @@ class ChatViewModel(
                 _messages.value = _messages.value.map {
                     if (it.id == assistantMessageId) it.copy(text = "Error: $msg") else it
                 }
-                repository.saveHistory(_messages.value)
+                persistChatHistorySnapshot()
                 _isGenerating.value = false
                 return@launch
             }
@@ -669,7 +842,12 @@ class ChatViewModel(
                 val finalParse = parseAssistant(rawSnapshot)
                 if (!outputSafetyBlocked) {
                     val contextParsed = if (finalParse.tailComplete && finalParse.topicContractValid) {
-                        AssistantOutput.extractOutputContext(rawSnapshot)
+                        val parsed = AssistantOutput.extractOutputContext(rawSnapshot)
+                        if (routedSubject == SubjectMode.EXAM_PREP) {
+                            ExamPrepCoachState.coerceQuestionProgression(parsed, memoryHint)
+                        } else {
+                            parsed
+                        }
                     } else {
                         null
                     }
@@ -716,7 +894,11 @@ class ChatViewModel(
                         }
                     }
                 }
-                repository.saveHistory(_messages.value)
+                persistChatHistorySnapshot()
+                if (deferredTopicSwitchEviction) {
+                    deferredTopicSwitchEviction = false
+                    evictTopicSwitchSessionUiAndKvCache()
+                }
                 val curiosityTelemetry = if (outputSafetyBlocked) {
                     null
                 } else {
@@ -759,10 +941,6 @@ class ChatViewModel(
 
     fun updateSettings(newSettings: InferenceSettings) {
         val previous = _settings.value
-        val normalizedSubject = when (newSettings.subjectMode) {
-            SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY -> SubjectMode.SCIENCE
-            else -> newSettings.subjectMode
-        }
         val topicSampling = LlmDefaults.samplingForSubject(newSettings.subjectMode)
         val coerced = newSettings.copy(
             maxTokens = newSettings.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP),
@@ -781,6 +959,19 @@ class ChatViewModel(
             chatDifficultyLaneKey = if (topicLaneChanged) newLane else (coerced.chatDifficultyLaneKey ?: newLane),
         )
         _settings.value = merged
+        if (merged.subjectMode != SubjectMode.EXAM_PREP) {
+            resetExamPrepLocalState()
+        } else if (topicLaneChanged) {
+            resetExamPrepLocalState()
+        }
+        if (topicLaneChanged) {
+            if (_isGenerating.value) {
+                deferredTopicSwitchEviction = true
+            } else {
+                deferredTopicSwitchEviction = false
+                evictTopicSwitchSessionUiAndKvCache()
+            }
+        }
         viewModelScope.launch {
             repository.saveInferenceSettings(merged)
         }
@@ -801,9 +992,13 @@ class ChatViewModel(
     fun clearChat() {
         viewModelScope.launch {
             if (_isGenerating.value) return@launch
+            useTopicSessionHistoryMerge = false
+            topicSessionHistoryPrefix = emptyList()
+            deferredTopicSwitchEviction = false
             _messages.value = emptyList()
             pendingImageContextForNextPrompt = null
             pendingImageContextTurnsRemaining = 0
+            resetExamPrepLocalState()
             repository.clearHistory()
         }
     }
@@ -912,7 +1107,7 @@ class ChatViewModel(
         )
         _messages.value = _messages.value + hint
         viewModelScope.launch {
-            repository.saveHistory(_messages.value)
+            persistChatHistorySnapshot()
         }
     }
 }

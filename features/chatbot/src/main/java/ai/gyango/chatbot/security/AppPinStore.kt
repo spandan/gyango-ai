@@ -9,7 +9,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * Stores a device-PIN hash and recovery hash (last name + birth month/year) in encrypted prefs.
+ * Stores a device-PIN hash and recovery hash (profile name + birth month/year) in encrypted prefs.
  * Never stores the raw PIN or recovery answers in plain text.
  */
 class AppPinStore(context: Context) {
@@ -72,14 +72,14 @@ class AppPinStore(context: Context) {
     }
 
     /**
-     * Returns true if [lastName], [birthMonth], and [birthYear] match the recovery material saved
+     * Returns true if [profileName], [birthMonth], and [birthYear] match the recovery material saved
      * with the PIN (does not change the PIN).
      */
-    fun verifyRecoveryIdentity(lastName: String, birthMonth: Int?, birthYear: Int?): Boolean {
+    fun verifyRecoveryIdentity(profileName: String, birthMonth: Int?, birthYear: Int?): Boolean {
         if (!hasPin()) return false
         val recoverySalt = prefs.getString(KEY_RECOVERY_SALT, null) ?: return false
         val expectedRecovery = prefs.getString(KEY_RECOVERY_HASH, null) ?: return false
-        val candidate = recoveryPayloadFromInputs(lastName, birthMonth, birthYear)
+        val candidate = recoveryPayloadFromInputs(profileName, birthMonth, birthYear)
         return constantTimeEquals(expectedRecovery, sha256B64(recoverySalt, candidate))
     }
 
@@ -87,13 +87,13 @@ class AppPinStore(context: Context) {
      * When recovery matches stored profile answers, replaces the PIN with [newPin].
      */
     fun verifyRecoveryAndSetNewPin(
-        lastName: String,
+        profileName: String,
         birthMonth: Int?,
         birthYear: Int?,
         newPin: String,
     ): Boolean {
         if (!hasPin()) return false
-        if (!verifyRecoveryIdentity(lastName, birthMonth, birthYear)) {
+        if (!verifyRecoveryIdentity(profileName, birthMonth, birthYear)) {
             return false
         }
         val normalized = normalizePin(newPin) ?: return false
@@ -117,13 +117,13 @@ class AppPinStore(context: Context) {
     }
 
     private fun recoveryPayload(profile: InferenceSettings): String =
-        recoveryPayloadFromInputs(profile.userLastName, profile.birthMonth, profile.birthYear)
+        recoveryPayloadFromInputs(profile.userProfileName, profile.birthMonth, profile.birthYear)
 
-    private fun recoveryPayloadFromInputs(lastName: String, birthMonth: Int?, birthYear: Int?): String {
-        val last = lastName.trim().lowercase()
+    private fun recoveryPayloadFromInputs(profileName: String, birthMonth: Int?, birthYear: Int?): String {
+        val nickname = profileName.trim().lowercase()
         val m = birthMonth?.toString() ?: ""
         val y = birthYear?.toString() ?: ""
-        return "$last|$m|$y"
+        return "$nickname|$m|$y"
     }
 
     private fun normalizePin(pin: String): String? {

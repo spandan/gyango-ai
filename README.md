@@ -22,7 +22,7 @@ GyanGo aims to put a private, child-friendly learning assistant on every support
   - Subject comfort bands
   - Optional low-pressure check-in flow
 - **Voice and text chat** with language-aware response handling
-- **Subject-focused tiles** (Curiosity, Math, Science, Coding, etc.) with icons
+- **Subject-focused tiles** (General, Math, Science, Coding, Writing, Exam prep) with icons
 - **Hint reveal UX** (`How did I think?`) to show reasoning only when needed
 - **Feedback flow** via prefilled email compose action
 - **PAD-style model preparation flow** for setup/download UX

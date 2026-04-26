@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "സെറ്റിംഗ്സ്",
+  "settingsConversationLanguage": "സംഭാഷണ ഭാഷ",
+  "settingsConversationLanguageHint": "സഹായിയുടെ മറുപടികൾ, സ്ക്രീൻ എഴുത്ത്, വോയ്സ് ഇൻപുട്ട് എന്നിവയ്ക്കുള്ള ഭാഷ. മാറ്റത്തിന് ശേഷം വരുന്ന പുതിയ സന്ദേശങ്ങളിൽ പ്രാബല്യത്തിൽ വരും.",
+  "settingsSpeechPickerTitle": "സംഭാഷണ ഭാഷ",
+  "settingsChangeConversationLanguage": "ഭാഷ മാറ്റുക",
+  "settingsHubTitle": "സെറ്റിംഗ്സ്",
+  "settingsHubProfileTitle": "ഉപയോക്തൃ പ്രൊഫൈൽ",
+  "settingsHubChatTitle": "ചാറ്റും മോഡലും",
+  "settingsProfileTitle": "ഉപയോക്തൃ പ്രൊഫൈൽ",
+  "settingsChatTitle": "ചാറ്റും മോഡലും",
+  "settingsBack": "പിന്നോട്ട്",
+  "settingsClose": "അടയ്ക്കുക",
+  "onboardingLanguageSection": "ഭാഷ",
+  "onboardingContinue": "തുടരുക"
+}

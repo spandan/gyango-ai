@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "सेटिंग्ज",
+  "settingsConversationLanguage": "संभाषणाची भाषा",
+  "settingsConversationLanguageHint": "उत्तरांची भाषा, स्क्रीन मजकूर आणि व्हॉइस इनपुट. बदलानंतरच्या नव्या संदेशांवर लागू.",
+  "settingsSpeechPickerTitle": "संभाषणाची भाषा",
+  "settingsChangeConversationLanguage": "भाषा बदला",
+  "settingsHubTitle": "सेटिंग्ज",
+  "settingsHubProfileTitle": "वापरकर्ता प्रोफाइल",
+  "settingsHubChatTitle": "चॅट आणि मॉडेल",
+  "settingsProfileTitle": "वापरकर्ता प्रोफाइल",
+  "settingsChatTitle": "चॅट आणि मॉडेल",
+  "settingsBack": "मागे",
+  "settingsClose": "बंद करा",
+  "onboardingLanguageSection": "भाषा",
+  "onboardingContinue": "पुढे"
+}

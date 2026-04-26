@@ -28,6 +28,9 @@ object GyangoOutputEnvelope {
 
     private val sparkFollowupOnlyPrefix = Regex("""(?i)^\s*follow\s*[-\s]?up\s*[:.\-–]\s*""")
 
+    /** Strips prompt-echo tier labels (models mirror `Ext:` / `Deep:` / `Apply:` from metadata instructions). */
+    private val sparkExtDeepApplyLabelPrefix = Regex("""(?i)^\s*(?:ext|deep|apply)\s*:\s*""")
+
     private val contextMarker = Regex("""(?mi)^\s*CONTEXT\s*(?:>>|>|:)\s*""")
     private val curiosityMarker = Regex("""(?mi)^\s*CURIOSITY\s*(?:>>|>|:)\s*""")
     private val sparksMarker = Regex("""(?mi)^\s*SPARKS\s*(?:>>|>|:)\s*""")
@@ -109,6 +112,7 @@ object GyangoOutputEnvelope {
                 c = sparkAngleBracketPlaceholder.replace(c, "").trim()
                 c = sparkChipDifficultyPrefix.replace(c, "").trim()
                 c = sparkFollowupOnlyPrefix.replace(c, "").trim()
+                c = sparkExtDeepApplyLabelPrefix.replace(c, "").trim()
             } while (c != prev && c.isNotEmpty())
             return c
         }

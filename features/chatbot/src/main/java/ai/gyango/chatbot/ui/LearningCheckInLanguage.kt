@@ -15,7 +15,7 @@ fun learningCheckInContentLanguage(localeTag: String): String {
         ""
     }.ifBlank { "en" }
     return when (language) {
-        "te", "hi", "en", "mr", "ta", "bn", "gu", "kn", "ml", "pa" -> language
+        "te", "hi", "en", "mr", "ta", "bn", "gu", "kn", "ml", "pa", "fr", "es" -> language
         else -> "en"
     }
 }

@@ -77,6 +77,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -120,6 +121,7 @@ import ai.gyango.core.ChatMessage
 import ai.gyango.core.InferenceSettings
 import ai.gyango.core.LlmDefaults
 import ai.gyango.core.Sender
+import ai.gyango.assistant.ExamPrepCoachState
 import ai.gyango.core.SubjectMode
 import ai.gyango.chatbot.security.AppPinStore
 import ai.gyango.chatbot.ui.theme.AssistantMessageBg
@@ -135,7 +137,7 @@ import ai.gyango.chatbot.ui.theme.UserMessageBgDark
 
 private val PresenceGreen = Color(0xFF43A047)
 
-/** Phase 1 tiles: general (includes curiosity), core subjects, writing, exam prep. */
+/** Phase 1 tiles: general, core subjects, writing, exam prep. */
 private val SUBJECT_TILES: List<Triple<String, SubjectMode, ImageVector>> = listOf(
     Triple("General", SubjectMode.GENERAL, Icons.Default.Lightbulb),
     Triple("Math", SubjectMode.MATH, Icons.Default.Calculate),
@@ -148,16 +150,10 @@ private val SUBJECT_TILES: List<Triple<String, SubjectMode, ImageVector>> = list
 private fun subjectTileSelected(settingsMode: SubjectMode?, tileMode: SubjectMode): Boolean {
     if (tileMode == SubjectMode.GENERAL) {
         return settingsMode == null ||
-            settingsMode == SubjectMode.GENERAL ||
-            settingsMode == SubjectMode.CURIOSITY
+            settingsMode == SubjectMode.GENERAL
     }
     if (tileMode == SubjectMode.SCIENCE) {
-        return settingsMode in setOf(
-            SubjectMode.SCIENCE,
-            SubjectMode.PHYSICS,
-            SubjectMode.CHEMISTRY,
-            SubjectMode.BIOLOGY,
-        )
+        return settingsMode == SubjectMode.SCIENCE
     }
     return settingsMode == tileMode
 }
@@ -283,6 +279,12 @@ fun ChatScreen(
     voiceError: String? = null,
     onDismissVoiceError: () -> Unit = {},
     onFeedbackClick: () -> Unit = {},
+    examPrepWizardDraft: ExamPrepWizardDraft = ExamPrepWizardDraft(),
+    examPrepSetupError: String? = null,
+    onExamPrepLane: (ExamPrepContentLane) -> Unit = {},
+    onExamPrepSubtopicContinue: (String) -> Unit = {},
+    onExamPrepQuestionCount: (Int) -> Unit = {},
+    onDismissExamPrepSetupError: () -> Unit = {},
     onNavigateBack: (() -> Unit)? = null,
     /** When the user chooses read-aloud while editing profile settings, host may open Android TTS data install if needed. */
     onReadAloudYesSelected: (speechInputLocaleTag: String) -> Unit = {},
@@ -292,6 +294,7 @@ fun ChatScreen(
     val displayStrings = rememberChatDisplayStrings(settings.speechInputLocaleTag)
     val inputBlockedUntilModelReady =
         modelLoadError != null || (isLoadingModel && messages.isEmpty())
+    val examPrepSetupSectionEnabled = !inputBlockedUntilModelReady && !isGenerating
 
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
@@ -466,6 +469,7 @@ fun ChatScreen(
                 modelLoadError = modelLoadError,
                 onRetryModelLoad = onRetryModelLoad,
                 chatInputMode = chatInputMode,
+                subjectMode = settings.subjectMode,
                 // Streaming placeholder (dots + hints) while the model writes; independent of prompt thought hints.
                 showThoughtProcess = true,
                 displayStrings = displayStrings,
@@ -473,6 +477,13 @@ fun ChatScreen(
                     inputText = ""
                     onSend(text, true)
                 },
+                examPrepWizardDraft = examPrepWizardDraft,
+                examPrepSetupError = examPrepSetupError,
+                examPrepSetupSectionEnabled = examPrepSetupSectionEnabled,
+                onExamPrepLane = onExamPrepLane,
+                onExamPrepSubtopicContinue = onExamPrepSubtopicContinue,
+                onExamPrepQuestionCount = onExamPrepQuestionCount,
+                onDismissExamPrepSetupError = onDismissExamPrepSetupError,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -687,6 +698,138 @@ fun ChatScreen(
 }
 
 @Composable
+private fun ExamPrepSetupWizard(
+    draft: ExamPrepWizardDraft,
+    setupError: String?,
+    sectionEnabled: Boolean,
+    displayStrings: ChatDisplayStrings,
+    onLane: (ExamPrepContentLane) -> Unit,
+    onSubtopicContinue: (String) -> Unit,
+    onQuestionCount: (Int) -> Unit,
+    onDismissError: () -> Unit,
+) {
+    var subtopicInput by remember(draft.lane) { mutableStateOf("") }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = EntryScreenCardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = displayStrings.examPrepSetupCardTitle,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            setupError?.takeIf { it.isNotBlank() }?.let { err ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onDismissError) {
+                        Text(displayStrings.examPrepSetupDismissError)
+                    }
+                }
+            }
+            Text(
+                text = displayStrings.examPrepSetupLanePrompt,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ExamPrepContentLane.entries.forEach { lane ->
+                    val selected = draft.lane == lane
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            if (sectionEnabled) onLane(lane)
+                        },
+                        label = { Text(lane.promptLabel) },
+                        enabled = sectionEnabled,
+                    )
+                }
+            }
+            if (draft.lane != null) {
+                Spacer(Modifier.height(4.dp))
+                if (draft.subtopic == null) {
+                    Text(
+                        text = displayStrings.examPrepSetupSubtopicPrompt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = subtopicInput,
+                        onValueChange = { subtopicInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = sectionEnabled,
+                        maxLines = 4,
+                        shape = EntryScreenFieldShape,
+                    )
+                    Button(
+                        onClick = { onSubtopicContinue(subtopicInput.trim()) },
+                        enabled = sectionEnabled && subtopicInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = EntryScreenFieldShape,
+                    ) {
+                        Text(displayStrings.examPrepSetupContinue)
+                    }
+                } else {
+                    Text(
+                        text = displayStrings.examPrepSetupQuestionCountPrompt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        listOf(10, 20, 30).forEach { count ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .clickable(
+                                        enabled = sectionEnabled,
+                                        onClick = { onQuestionCount(count) },
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                            ) {
+                                RadioButton(
+                                    selected = false,
+                                    onClick = { if (sectionEnabled) onQuestionCount(count) },
+                                    enabled = sectionEnabled,
+                                )
+                                Text(
+                                    text = count.toString(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(start = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SubjectModeTileRow(
     settings: InferenceSettings,
     onSettingsChanged: (InferenceSettings) -> Unit,
@@ -742,9 +885,17 @@ private fun MessagesList(
     modelLoadError: String? = null,
     onRetryModelLoad: () -> Unit = {},
     chatInputMode: ChatInputMode = ChatInputMode.VoicePrimary,
+    subjectMode: SubjectMode? = null,
     showThoughtProcess: Boolean = true,
     displayStrings: ChatDisplayStrings,
     onSparkChipSend: (String) -> Unit,
+    examPrepWizardDraft: ExamPrepWizardDraft = ExamPrepWizardDraft(),
+    examPrepSetupError: String? = null,
+    examPrepSetupSectionEnabled: Boolean = true,
+    onExamPrepLane: (ExamPrepContentLane) -> Unit = {},
+    onExamPrepSubtopicContinue: (String) -> Unit = {},
+    onExamPrepQuestionCount: (Int) -> Unit = {},
+    onDismissExamPrepSetupError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (messages.isEmpty()) {
@@ -860,6 +1011,35 @@ private fun MessagesList(
                         }
                     }
                 }
+                subjectMode == SubjectMode.EXAM_PREP -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        if (logo != null) {
+                            Image(
+                                bitmap = logo,
+                                contentDescription = displayStrings.topBarTitle,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                            )
+                        }
+                        ExamPrepSetupWizard(
+                            draft = examPrepWizardDraft,
+                            setupError = examPrepSetupError,
+                            sectionEnabled = examPrepSetupSectionEnabled,
+                            displayStrings = displayStrings,
+                            onLane = onExamPrepLane,
+                            onSubtopicContinue = onExamPrepSubtopicContinue,
+                            onQuestionCount = onExamPrepQuestionCount,
+                            onDismissError = onDismissExamPrepSetupError,
+                        )
+                    }
+                }
                 else -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -935,6 +1115,7 @@ private fun MessagesList(
                 val isLast = message.id == lastMessage?.id
                 MessageBubble(
                     message = message,
+                    subjectMode = subjectMode,
                     assistantLogo = assistantLogo,
                     showTypingPlaceholder = false,
                     loadingModelPlaceholder = false,
@@ -954,6 +1135,7 @@ private fun MessagesList(
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    subjectMode: SubjectMode? = null,
     assistantLogo: ImageBitmap? = null,
     showTypingPlaceholder: Boolean = false,
     loadingModelPlaceholder: Boolean = false,
@@ -980,6 +1162,7 @@ private fun MessageBubble(
     val assistantAccent =
         if (isDark) ChatAssistantLinkDark else ChatAssistantLinkLight
     val textColor = if (isUser) userBubbleText else assistantBodyText
+    val examPrepLane = (subjectMode ?: SubjectMode.GENERAL) == SubjectMode.EXAM_PREP
     val isAssistantIdlePlaceholder =
         !isUser && (showTypingPlaceholder || loadingModelPlaceholder)
     val hasAssistantBubbleContent =
@@ -1018,6 +1201,18 @@ private fun MessageBubble(
                         letterSpacing = 0.2.sp
                     )
                 } else {
+                    val examLevelLabel = if (examPrepLane) {
+                        ExamPrepCoachState.parseLevel(message.outputContext)?.let { level ->
+                            val numeric = if (level % 1.0 == 0.0) {
+                                level.toInt().toString()
+                            } else {
+                                level.toString()
+                            }
+                            "Lv $numeric"
+                        }
+                    } else {
+                        null
+                    }
                     AssistantReadableText(
                         raw = message.text,
                         rawEnvelopeForLessonParsing = message.rawAssistantEnvelope,
@@ -1031,6 +1226,8 @@ private fun MessageBubble(
                         awaitingStreamHints = awaitingStreamHints,
                         onSparkChipClick = onSparkChipSend,
                         sparkChipsEnabled = !isGenerating && !showLivePresence,
+                        splitExamReviewAndNextQuestion = examPrepLane,
+                        examPrepLevelLabel = examLevelLabel,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -1123,9 +1320,7 @@ private fun ChatSettingsOverlay(
     val appPinStore = remember(context) { AppPinStore(context) }
     val appVersion = rememberAppVersionInfo()
 
-    var profileFirst by remember { mutableStateOf(settings.userFirstName) }
-    var profileLast by remember { mutableStateOf(settings.userLastName) }
-    var profileEmail by remember { mutableStateOf(settings.userEmail) }
+    var profileName by remember { mutableStateOf(settings.userProfileName) }
     var profileBirthMonth by remember { mutableStateOf(settings.birthMonth) }
     var profileBirthYear by remember { mutableStateOf(settings.birthYear) }
     var profileAssistantSpeech by remember { mutableStateOf(settings.assistantSpeechEnabled) }
@@ -1148,9 +1343,7 @@ private fun ChatSettingsOverlay(
     LaunchedEffect(page) {
         when (page) {
             ChatSettingsPage.Profile -> {
-                profileFirst = settings.userFirstName
-                profileLast = settings.userLastName
-                profileEmail = settings.userEmail
+                profileName = settings.userProfileName
                 profileBirthMonth = settings.birthMonth
                 profileBirthYear = settings.birthYear
                 profileAssistantSpeech = settings.assistantSpeechEnabled
@@ -1244,9 +1437,10 @@ private fun ChatSettingsOverlay(
                                     }
                                     onSettingsChanged(
                                         settings.copy(
-                                            userFirstName = profileFirst.trim(),
-                                            userLastName = profileLast.trim(),
-                                            userEmail = profileEmail.trim(),
+                                            userProfileName = profileName.trim(),
+                                            userFirstName = "",
+                                            userLastName = "",
+                                            userEmail = "",
                                             birthMonth = profileBirthMonth,
                                             birthYear = profileBirthYear,
                                             speechInputLocaleTag = speechLocaleTag,
@@ -1255,7 +1449,7 @@ private fun ChatSettingsOverlay(
                                     )
                                     onChangePage(ChatSettingsPage.Hub)
                                 },
-                                enabled = profileFirst.trim().isNotEmpty() && profileLast.trim().isNotEmpty(),
+                                enabled = profileName.trim().isNotEmpty(),
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
@@ -1541,25 +1735,9 @@ private fun ChatSettingsOverlay(
                             val hintColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
 
                             OutlinedTextField(
-                                value = profileFirst,
-                                onValueChange = { profileFirst = it },
-                                label = { Text(locStrings.onboardingFirstNameLabel) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                            OutlinedTextField(
-                                value = profileLast,
-                                onValueChange = { profileLast = it },
-                                label = { Text(locStrings.onboardingLastNameLabel) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                            OutlinedTextField(
-                                value = profileEmail,
-                                onValueChange = { profileEmail = it },
-                                label = { Text(locStrings.profileEmailLabel) },
+                                value = profileName,
+                                onValueChange = { profileName = it },
+                                label = { Text(locStrings.onboardingProfileNameLabel.ifBlank { locStrings.onboardingFirstNameLabel }) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),

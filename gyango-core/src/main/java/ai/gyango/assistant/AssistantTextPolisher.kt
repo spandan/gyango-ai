@@ -51,14 +51,22 @@ object AssistantTextPolisher {
         s = normalizeMarkdownUnicode(s)
         s = decodeLiteralNewlineEscapes(s)
         s = stripPromptScaffoldEcho(s)
+        s = transformOutsideFencedCodeBlocks(s, ::stripNudgingLabelPrefixes)
+        s = transformOutsideFencedCodeBlocks(s, ::stripInlineExamQuestionBracketTags)
         // Models often emit `$ ext{...}` when `\text` loses its backslash; repair before `$...$` pairing.
         s = transformOutsideFencedCodeBlocks(s, ::repairMangledDollarExtFragments)
         // Same mangling appears without `$` (e.g. `ext { H } _2`); must run for markdown too — otherwise
         // Markwon shows literal "ext{}" in bubbles.
         s = transformOutsideFencedCodeBlocks(s, ::repairBareMangledTextFragments)
+        // `$$…$` (missing final `$`) leaves a visible trailing `$` after JLatex; close the span before orphan stripping.
+        s = transformOutsideFencedCodeBlocks(s, ::repairDoubleDollarSingleDollarClose)
+        // Remove lone `$` stranded at line end (`...$`) while preserving balanced math/currency spans.
+        s = transformOutsideFencedCodeBlocks(s, ::stripSingleTrailingOrphanDollarAtEol)
         s = transformOutsideFencedCodeBlocks(s, ::stripDanglingDollarDelimiters)
         // Adjacent `$a$$b$` (no space) parses as one blob after JLatex `$$` normalization; keep spans separate.
         s = transformOutsideFencedCodeBlocks(s, ::insertSpaceBetweenAdjacentInlineDollarMath)
+        // Same for adjacent `$$…$$$$…$$` after normalization (polisher does not run again in the UI).
+        s = transformOutsideFencedCodeBlocks(s, ::insertSpaceBetweenAdjacentDoubleDollarMath)
         if (convertLatexToPlain) {
             s = latexLiteToPlain(s)
             // Chemistry / LaTeX-lite outside $…$ (e.g. mangled `\text` → `ext{H}_2`) and stragglers after $ pass.
@@ -78,6 +86,60 @@ object AssistantTextPolisher {
     }
 
     /**
+     * Drops a single trailing `$` at end-of-line when it is not part of a balanced `...$...$` span.
+     * Example: `8 + 5 = 13$` -> `8 + 5 = 13`
+     */
+    private fun stripSingleTrailingOrphanDollarAtEol(chunk: String): String {
+        val lines = chunk.replace("\r\n", "\n").split('\n')
+        return lines.joinToString("\n") { line ->
+            val trimmedEnd = line.trimEnd()
+            if (!trimmedEnd.endsWith('$')) return@joinToString line
+            if (trimmedEnd.endsWith("$$")) return@joinToString line
+            val idx = trimmedEnd.lastIndexOf('$')
+            if (idx <= 0) return@joinToString line
+            // If there is an unmatched non-currency `$` before the trailing one, keep as math delimiter.
+            val prior = trimmedEnd.substring(0, idx)
+            val nonCurrencyCountBefore = prior.indices.count { i ->
+                prior[i] == '$' && (i == 0 || prior[i - 1] != '\\') && !isCurrencyDollarPrefix(prior, i)
+            }
+            if (nonCurrencyCountBefore % 2 == 1) {
+                line
+            } else {
+                val prefix = trimmedEnd.dropLast(1).trimEnd()
+                line.replaceRange(0, line.length, prefix)
+            }
+        }
+    }
+
+    /**
+     * Removes recurring prompt-ish nudging labels that should not be visible in the learner UI.
+     * Kept narrow to avoid altering genuine prose.
+     */
+    private fun stripNudgingLabelPrefixes(chunk: String): String {
+        var t = chunk
+        t = Regex(
+            """(?im)^\s*(?:[-*]\s*)?(?:deeper\s*layer|deep(?:er)?\s*layer)\s*:\s*""",
+            RegexOption.IGNORE_CASE,
+        ).replace(t, "")
+        t = Regex(
+            """(?i)\b(?:deeper\s*layer|deep(?:er)?\s*layer)\s*:\s*""",
+            RegexOption.IGNORE_CASE,
+        ).replace(t, "")
+        t = Regex("""\n{3,}""").replace(t, "\n\n")
+        return t
+    }
+
+    /** Hide inline exam scaffolding tags from user-facing markdown (e.g. `[Question: 4]`). */
+    private fun stripInlineExamQuestionBracketTags(chunk: String): String {
+        var t = chunk
+        t = Regex("""\[\s*Question:\s*(?:\d+|k)\s*]""", RegexOption.IGNORE_CASE).replace(t, "")
+        // Keep section headers tight: avoid blank spacer lines immediately under headings.
+        t = Regex("""(?m)^(###\s+[^\n]+)\n{2,}""").replace(t, "$1\n")
+        t = Regex("""\n{3,}""").replace(t, "\n\n")
+        return t
+    }
+
+    /**
      * Remove prompt-template scaffolding if the model accidentally echoes it into the visible lesson.
      */
     private fun stripPromptScaffoldEcho(text: String): String {
@@ -87,8 +149,8 @@ object AssistantTextPolisher {
             if (t.isEmpty()) return@filterNot false
             t.matches(Regex("""^(?:[*_`>#-]+\s*)*(?:#\s*)?(MISSION|SESSION|FORMAT\s*\(STRICT\)|TAIL(?:\s*\(.*\))?)\s*$""", RegexOption.IGNORE_CASE)) ||
                 t.matches(Regex("""^\[(?:ACTIVATE|DOMAIN):[^\]]*]$""", RegexOption.IGNORE_CASE)) ||
-                t.matches(Regex("""^TOPIC\s*:\s*(GENERAL|CURIOSITY|MATH|SCIENCE|PHYSICS|CHEMISTRY|BIOLOGY|CODING|WRITING|EXAM_PREP)\s*$""", RegexOption.IGNORE_CASE)) ||
-                t.matches(Regex("""^TOPIC_LANE\s*:\s*(GENERAL|SCIENCE|MATH|CODING|WRITING|CURIOSITY|EXAM_PREP|PHYSICS|CHEMISTRY|BIOLOGY)\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^TOPIC\s*:\s*(GENERAL|MATH|SCIENCE|CODING|WRITING|EXAM_PREP)\s*$""", RegexOption.IGNORE_CASE)) ||
+                t.matches(Regex("""^TOPIC_LANE\s*:\s*(GENERAL|SCIENCE|MATH|CODING|WRITING|EXAM_PREP)\s*$""", RegexOption.IGNORE_CASE)) ||
                 t.matches(Regex("""^AGE\s*:\s*\d+\s*\|\s*LANG\s*:.*$""", RegexOption.IGNORE_CASE)) ||
                 t.matches(Regex("""^MODE\s*:\s*(GENERIC|CHALLENGE|SUPPORTIVE|EASY_PACE|DEEPER|BALANCED).*$""", RegexOption.IGNORE_CASE)) ||
                 t.matches(Regex("""^PRIOR\s*:\s*.*$""", RegexOption.IGNORE_CASE)) ||
@@ -546,6 +608,60 @@ object AssistantTextPolisher {
      */
     private fun insertSpaceBetweenAdjacentInlineDollarMath(chunk: String): String {
         val pattern = Regex("""(?<![\\])(\$[^$\n]+\$)(?=(?<![\\])\$[^$\n]+\$)""")
+        var s = chunk
+        var prev: String
+        do {
+            prev = s
+            s = pattern.replace(s) { "${it.groupValues[1]} " }
+        } while (s != prev)
+        return s
+    }
+
+    /**
+     * Models often close with a single `$` after opening `$$`. JLatex then leaves a stray `$` in the bubble.
+     * Only repair when the inner chunk looks like math and the `$` is not followed by a letter (avoids `$$a$b$`).
+     */
+    private fun repairDoubleDollarSingleDollarClose(chunk: String): String {
+        val pattern = Regex("""(?<![\\])\$\$([^$\n]+)\$(?!\$)(?![A-Za-z])""")
+        var s = chunk
+        var prev: String
+        do {
+            prev = s
+            s = pattern.replace(s) { m ->
+                val inner = m.groupValues[1]
+                if (doubleDollarInnerLooksLikeMathContent(inner)) {
+                    val dd = "${'$'}${'$'}"
+                    "$dd$inner$dd"
+                } else {
+                    m.value
+                }
+            }
+        } while (s != prev)
+        return s
+    }
+
+    private fun doubleDollarInnerLooksLikeMathContent(inner: String): Boolean {
+        val t = inner.trim()
+        if (t.isEmpty()) return false
+        if (Regex("""[\\^_{}=+\-*/<>0-9]|\\frac|\\text|\\mathrm|\\sqrt|\\sum|\\int""").containsMatchIn(t)) {
+            return true
+        }
+        if (!Regex("""^[A-Za-z]{1,3}$""").matches(t)) return false
+        if (t.length == 3 && t.all { it.isUpperCase() }) return false
+        if (t in doubleDollarShortEnglishBlocklist) return false
+        return true
+    }
+
+    private val doubleDollarShortEnglishBlocklist = setOf(
+        "it", "or", "an", "if", "is", "to", "of", "in", "on", "at", "as", "by", "be", "we", "he",
+        "do", "no", "so", "up", "me", "my", "us", "am",
+    )
+
+    /**
+     * Insert a space between consecutive `$$…$$` spans on the same line (`$$a$$$$b$$` → `$$a$$ $$b$$`).
+     */
+    private fun insertSpaceBetweenAdjacentDoubleDollarMath(chunk: String): String {
+        val pattern = Regex("""(?<![\\])(\$\$[^$]+\$\$)(?=(?<![\\])\$\$[^$]+\$\$)""")
         var s = chunk
         var prev: String
         do {

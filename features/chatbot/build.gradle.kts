@@ -15,7 +15,7 @@ android {
     /** Same switch as app module: `-Pgyango.verboseLogs=true` */
     val verboseDebugLogs =
         project.findProperty("gyango.verboseLogs")?.toString()?.equals("true", ignoreCase = true) == true
-    /** Full LLM request/response payload logs (off by default). */
+    /** Release library AAR: off unless `-Pgyango.llmIoLogs=true`. Debug variant overrides to on (see `buildTypes.debug`). */
     val llmIoLogs =
         project.findProperty("gyango.llmIoLogs")?.toString()?.equals("true", ignoreCase = true) == true
 
@@ -34,6 +34,13 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    buildTypes {
+        debug {
+            // Match app debug: log LLM_RAW_RESPONSE / LLM_FINAL_DISPLAY without Gradle -P flags.
+            buildConfigField("boolean", "LLM_IO_LOGS", "true")
+        }
     }
 
     lint {

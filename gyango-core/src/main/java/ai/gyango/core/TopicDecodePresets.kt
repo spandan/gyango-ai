@@ -15,11 +15,6 @@ data class TopicSampling(
     val topK: Int,
 )
 
-/** Slightly more exploratory than general — tune independently of [SubjectMode.GENERAL]. */
-private const val CURIOSITY_TEMPERATURE: Float = 1.02f
-private const val CURIOSITY_TOP_P: Float = 0.96f
-private const val CURIOSITY_TOP_K: Int = 70
-
 fun topicSamplingForSubject(subjectMode: SubjectMode?): TopicSampling = when (subjectMode) {
     null,
     SubjectMode.GENERAL,
@@ -29,12 +24,6 @@ fun topicSamplingForSubject(subjectMode: SubjectMode?): TopicSampling = when (su
             topP = LlmDefaults.SAMPLING_DEFAULT_TOP_P,
             topK = LlmDefaults.SAMPLING_DEFAULT_TOP_K,
         )
-    SubjectMode.CURIOSITY ->
-        TopicSampling(
-            temperature = CURIOSITY_TEMPERATURE,
-            topP = CURIOSITY_TOP_P,
-            topK = CURIOSITY_TOP_K,
-        )
     SubjectMode.MATH ->
         TopicSampling(
             temperature = LlmDefaults.TOPIC_MATH_SCIENCE_TEMPERATURE,
@@ -42,24 +31,6 @@ fun topicSamplingForSubject(subjectMode: SubjectMode?): TopicSampling = when (su
             topK = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_K,
         )
     SubjectMode.SCIENCE ->
-        TopicSampling(
-            temperature = LlmDefaults.TOPIC_MATH_SCIENCE_TEMPERATURE,
-            topP = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_P,
-            topK = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_K,
-        )
-    SubjectMode.PHYSICS ->
-        TopicSampling(
-            temperature = LlmDefaults.TOPIC_MATH_SCIENCE_TEMPERATURE,
-            topP = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_P,
-            topK = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_K,
-        )
-    SubjectMode.CHEMISTRY ->
-        TopicSampling(
-            temperature = LlmDefaults.TOPIC_MATH_SCIENCE_TEMPERATURE,
-            topP = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_P,
-            topK = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_K,
-        )
-    SubjectMode.BIOLOGY ->
         TopicSampling(
             temperature = LlmDefaults.TOPIC_MATH_SCIENCE_TEMPERATURE,
             topP = LlmDefaults.TOPIC_MATH_SCIENCE_TOP_P,

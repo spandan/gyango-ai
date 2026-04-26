@@ -51,12 +51,8 @@ enum class AppThemeMode {
 @Serializable
 enum class SubjectMode {
     GENERAL,
-    CURIOSITY,
     MATH,
     SCIENCE,
-    PHYSICS,
-    CHEMISTRY,
-    BIOLOGY,
     CODING,
     WRITING,
     EXAM_PREP,
@@ -122,15 +118,19 @@ data class InferenceSettings(
      */
     val assistantSpeechEnabled: Boolean = false,
     /**
-     * Given name from first-run profile (trimmed in repository); used in prompts when non-blank.
+     * Non-identifying local profile name (nickname) from onboarding.
+     */
+    val userProfileName: String = "",
+    /**
+     * Legacy field retained for backward compatibility; no longer collected in UI.
      */
     val userFirstName: String = "",
     /**
-     * Family name from first-run profile (trimmed in repository); used in prompts when non-blank.
+     * Legacy field retained for backward compatibility; no longer collected in UI.
      */
     val userLastName: String = "",
     /**
-     * Optional email for feedback or local profile display; not sent to the model unless wired later.
+     * Legacy field retained for backward compatibility; no longer collected in UI.
      */
     val userEmail: String = "",
     /**

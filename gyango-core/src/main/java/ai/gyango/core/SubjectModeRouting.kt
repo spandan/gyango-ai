@@ -1,9 +1,6 @@
 package ai.gyango.core
 
-/** Maps legacy science splits to the single Science tile; other modes unchanged. */
+/** Subject routing is now identity; science sub-modes were retired. */
 object SubjectModeRouting {
-    fun effectiveSubjectMode(mode: SubjectMode?): SubjectMode? = when (mode) {
-        SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY -> SubjectMode.SCIENCE
-        else -> mode
-    }
+    fun effectiveSubjectMode(mode: SubjectMode?): SubjectMode? = mode
 }

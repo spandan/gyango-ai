@@ -22,7 +22,7 @@ object SubjectModeAutoRouter {
         """(?i)\b(photosynthesis|cell|molecule|atom|reaction|physics|chemistry|biology|experiment|hypothesis|dna|rna|gravity|energy|ecosystem|element)\b""",
     )
 
-    /** Light social openers: keep on GENERAL/CURIOSITY role, not the broad “any ? ⇒ CURIOSITY” path. */
+    /** Light social openers: stay on GENERAL instead of treating short social text as a topic question. */
     private val lightweightSocial = Regex(
         """(?i)^\s*(hi+|hello|hey|how\s+are\s+you|what'?s\s+up|good\s+(morning|afternoon|evening)|namaste)\b""",
     )
@@ -36,7 +36,6 @@ object SubjectModeAutoRouter {
         if (examSignals.containsMatchIn(t)) return SubjectMode.EXAM_PREP
         if (writingSignals.containsMatchIn(t)) return SubjectMode.WRITING
         if (scienceSignals.containsMatchIn(t)) return SubjectMode.SCIENCE
-        if (t.contains('?')) return SubjectMode.CURIOSITY
         return SubjectMode.GENERAL
     }
 }

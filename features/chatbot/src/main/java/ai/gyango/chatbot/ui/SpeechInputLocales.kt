@@ -15,5 +15,7 @@ object SpeechInputLocales {
         "kn-IN" to "ಕನ್ನಡ",
         "ml-IN" to "മലയാളം",
         "pa-IN" to "ਪੰਜਾਬੀ",
+        "fr-FR" to "Français",
+        "es-ES" to "Español",
     )
 }

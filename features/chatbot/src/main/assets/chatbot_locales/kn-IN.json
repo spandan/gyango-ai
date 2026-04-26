@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "ಸೆಟ್ಟಿಂಗ್ಸ್",
+  "settingsConversationLanguage": "ಸಂಭಾಷಣೆಯ ಭಾಷೆ",
+  "settingsConversationLanguageHint": "ಸಹಾಯಕ ಉತ್ತರಗಳು, ಪರದೆಯ ಪಠ್ಯ ಮತ್ತು ಧ್ವನಿ ಇನ್‌ಪುಟ್‌ಗೆ ಈ ಭಾಷೆ ಬಳಸಲಾಗುತ್ತದೆ. ಬದಲಾವಣೆಯ ನಂತರದ ಹೊಸ ಸಂದೇಶಗಳಿಗೆ ಅನ್ವಯಿಸುತ್ತದೆ.",
+  "settingsSpeechPickerTitle": "ಸಂಭಾಷಣೆಯ ಭಾಷೆ",
+  "settingsChangeConversationLanguage": "ಭಾಷೆ ಬದಲಿಸಿ",
+  "settingsHubTitle": "ಸೆಟ್ಟಿಂಗ್ಸ್",
+  "settingsHubProfileTitle": "ಬಳಕೆದಾರ ಪ್ರೊಫೈಲ್",
+  "settingsHubChatTitle": "ಚಾಟ್ ಮತ್ತು ಮಾದರಿ",
+  "settingsProfileTitle": "ಬಳಕೆದಾರ ಪ್ರೊಫೈಲ್",
+  "settingsChatTitle": "ಚಾಟ್ ಮತ್ತು ಮಾದರಿ",
+  "settingsBack": "ಹಿಂದೆ",
+  "settingsClose": "ಮುಚ್ಚಿ",
+  "onboardingLanguageSection": "ಭಾಷೆ",
+  "onboardingContinue": "ಮುಂದುವರಿಸಿ"
+}

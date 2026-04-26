@@ -12,7 +12,7 @@ android {
     /** Opt-in: `./gradlew ... -Pgyango.verboseLogs=true` — large logcat (prompts, perf, PAD noise). Default off for all flavors/buildTypes. */
     val verboseDebugLogs =
         project.findProperty("gyango.verboseLogs")?.toString()?.equals("true", ignoreCase = true) == true
-    /** Opt-in: `./gradlew ... -Pgyango.llmIoLogs=true` — full LLM request/response payload logs. */
+    /** Release: opt-in `./gradlew ... -Pgyango.llmIoLogs=true`. Debug builds enable LLM payload logs in `buildTypes.debug`. */
     val llmIoLogs =
         project.findProperty("gyango.llmIoLogs")?.toString()?.equals("true", ignoreCase = true) == true
 
@@ -90,6 +90,8 @@ android {
         }
         debug {
             buildConfigField("boolean", "FAKE_ENTITLEMENTS_UNLOCK_ALL", "true")
+            // Log full LLM I/O to logcat without `-Pgyango.llmIoLogs=true` (release stays opt-in via defaultConfig).
+            buildConfigField("boolean", "LLM_IO_LOGS", "true")
         }
     }
 

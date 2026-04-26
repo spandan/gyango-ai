@@ -91,6 +91,51 @@ class AssistantTextPolisherAndMarkwonTest {
     }
 
     @Test
+    fun normalizeSingleDollarLatex_wrapsBareSingleLetterVariable() {
+        val s = normalizeSingleDollarLatexForJlMath("Let \$x\$ be positive.")
+        assertTrue(s.contains("\$\$x\$\$"))
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_wrapsShortAlphabeticVariable() {
+        val s = normalizeSingleDollarLatexForJlMath("Solve for \$xy\$ given data.")
+        assertTrue(s.contains("\$\$xy\$\$"))
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_doesNotWrapThreeLetterAllCaps() {
+        val s = normalizeSingleDollarLatexForJlMath("Price in \$USD\$ today.")
+        assertEquals("Price in \$USD\$ today.", s)
+    }
+
+    @Test
+    fun normalizeSingleDollarLatex_doesNotWrapCommonEnglishInDollars() {
+        val s = normalizeSingleDollarLatexForJlMath("If \$it\$ fails, retry.")
+        assertEquals("If \$it\$ fails, retry.", s)
+    }
+
+    @Test
+    fun polishForMarkdown_repairsDoubleDollarClosedWithSingleDollar() {
+        val raw = "\$\$x+y=10 x-y=6\$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertEquals("\$\$x+y=10 x-y=6\$\$", out.trim())
+    }
+
+    @Test
+    fun polishForMarkdown_insertsSpaceBetweenAdjacentDoubleDollarSpans() {
+        val raw = "\$\$a\$\$\$\$b\$\$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$\$a\$\$ \$\$b\$\$"))
+    }
+
+    @Test
+    fun polishForMarkdown_doesNotRepairDoubleDollarSingleInsideFencedCode() {
+        val raw = "```\n\$\$x+1\$\n```"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertEquals(raw.trim(), out.trim())
+    }
+
+    @Test
     fun polishForMarkdown_insertsSpaceBetweenAdjacentInlineMath() {
         val raw = "We have \$x+y=10\$\$x-y=6\$."
         val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
@@ -199,6 +244,68 @@ class AssistantTextPolisherAndMarkwonTest {
         val raw = "Read the context{note} carefully — unrelated braces."
         val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
         assertTrue(out.contains("context{note}"))
+    }
+
+    @Test
+    fun polishForMarkdown_stripsInlineExamQuestionTagFromVisibleBody() {
+        val raw = "### Next Question\n[Question: 8]\nWhat is 12 x 3?"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("[Question: 8]"))
+        assertTrue(out.contains("What is 12 x 3?"))
+    }
+
+    @Test
+    fun polishForMarkdown_keepsNoExtraBlankLineAfterHeading() {
+        val raw = "### Feedback\n\nNice try.\n\n### Next Question\n\nWhat is 2+2?"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("### Feedback\nNice try."))
+        assertTrue(out.contains("### Next Question\nWhat is 2+2?"))
+    }
+
+    @Test
+    fun polishForMarkdown_stripsDeeperLayerLabelEverywhere() {
+        val raw = "Deeper Layer: Try this angle.\n\n- Deeper Layer: Why does this happen?"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("Deeper Layer:", ignoreCase = true))
+        assertTrue(out.contains("Try this angle."))
+        assertTrue(out.contains("Why does this happen?"))
+    }
+
+    @Test
+    fun polishForMarkdown_removesSingleTrailingOrphanDollarBeforeNewline() {
+        val raw = "Compute total first$\nThen continue."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(!out.contains("first$"))
+        assertTrue(out.contains("Compute total first\nThen continue."))
+    }
+
+    @Test
+    fun polishForMarkdown_keepsBalancedInlineMathSpan() {
+        val raw = "Equation is \$x+1\$ for this step."
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$x+1\$"))
+    }
+
+    @Test
+    fun polishForMarkdown_keepsBalancedDoubleDollarSpan() {
+        val raw = "\$\$x+y=10\$\$"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("\$\$x+y=10\$\$"))
+    }
+
+    @Test
+    fun polishForMarkdown_keepsCurrencyAtLineEnd() {
+        val raw = "The fee is $12.99"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertEquals(raw, out)
+    }
+
+    @Test
+    fun polishForMarkdown_doesNotModifyTrailingDollarInsideFencedCode() {
+        val raw = "```\nvalue$ \n```"
+        val out = AssistantTextPolisher.polishDisplayTextForMarkdown(raw)
+        assertTrue(out.contains("```"))
+        assertTrue(out.contains("value$"))
     }
 
     @Test

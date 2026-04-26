@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "அமைப்புகள்",
+  "settingsConversationLanguage": "உரையாடல் மொழி",
+  "settingsConversationLanguageHint": "பதில்கள், திரை உரை மற்றும் குரல் உள்ளீட்டின் மொழி. மாற்றத்துக்குப் பிறகு வரும் புதிய செய்திகளுக்கு மட்டும் பொருந்தும்.",
+  "settingsSpeechPickerTitle": "உரையாடல் மொழி",
+  "settingsChangeConversationLanguage": "மொழியை மாற்று",
+  "settingsHubTitle": "அமைப்புகள்",
+  "settingsHubProfileTitle": "பயனர் சுயவிவரம்",
+  "settingsHubChatTitle": "உரையாடல் & மாதிரி",
+  "settingsProfileTitle": "பயனர் சுயவிவரம்",
+  "settingsChatTitle": "உரையாடல் & மாதிரி",
+  "settingsBack": "பின்",
+  "settingsClose": "மூடு",
+  "onboardingLanguageSection": "மொழி",
+  "onboardingContinue": "தொடர்"
+}

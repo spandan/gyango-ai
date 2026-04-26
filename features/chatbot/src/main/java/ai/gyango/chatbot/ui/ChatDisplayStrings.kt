@@ -7,6 +7,10 @@ import androidx.compose.ui.platform.LocalContext
 import java.util.Locale
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 
 /**
  * User-visible chat chrome keyed by [InferenceSettings.speechInputLocaleTag]. Strings are loaded
@@ -58,6 +62,7 @@ data class ChatDisplayStrings(
     val onboardingIntroContinue: String = "",
     val onboardingWelcomeTitle: String = "",
     val onboardingWelcomeBody: String = "",
+    val onboardingProfileNameLabel: String = "",
     val onboardingFirstNameLabel: String = "",
     val onboardingLastNameLabel: String = "",
     val onboardingBirthOptionalSection: String = "",
@@ -130,6 +135,12 @@ data class ChatDisplayStrings(
     val onboardingHardwareLowRamCard: String = "",
     val onboardingHardwareLowDiskCard: String = "",
     val childSafeBanner: String = "",
+    val examPrepSetupCardTitle: String = "",
+    val examPrepSetupLanePrompt: String = "",
+    val examPrepSetupSubtopicPrompt: String = "",
+    val examPrepSetupQuestionCountPrompt: String = "",
+    val examPrepSetupContinue: String = "",
+    val examPrepSetupDismissError: String = "",
     val pinSetupTitle: String = "",
     val pinSetupBody: String = "",
     /** First-run PIN creation: first field label ("Enter PIN"). */
@@ -172,19 +183,33 @@ const val CHAT_BRAND_TAGLINE = "Gyan on the Go"
 private object ChatDisplayStringsStore {
     private val json = Json { ignoreUnknownKeys = true }
     private val cache = mutableMapOf<String, ChatDisplayStrings>()
+    private val supportedLocaleTags: List<String> = SpeechInputLocales.OPTIONS.map { it.first }
 
     fun load(context: Context, localeTag: String): ChatDisplayStrings {
         val key = canonicalTag(localeTag)
         cache[key]?.let { return it }
 
-        val loaded = decodeAssetOrNull(context, "chatbot_locales/$key.json")
-            ?: decodeAssetOrNull(context, "chatbot_locales/en-US.json")
+        val loaded = loadMerged(context, key)
             ?: ChatDisplayStrings(
                 topBarTitle = CHAT_ASSISTANT_DISPLAY_NAME,
                 topBarCaption = CHAT_BRAND_TAGLINE,
             )
         cache[key] = loaded
         return loaded
+    }
+
+    private fun loadMerged(context: Context, localeTag: String): ChatDisplayStrings? {
+        val base = decodeJsonObjectOrNull(context, "chatbot_locales/en-US.json")
+        val localized = decodeJsonObjectOrNull(context, "chatbot_locales/$localeTag.json")
+
+        val merged = when {
+            base == null && localized == null -> return null
+            base == null -> localized
+            localized == null -> base
+            localeTag.equals("en-US", ignoreCase = true) -> base
+            else -> mergeObjects(base, localized)
+        } ?: return null
+        return json.decodeFromJsonElement(ChatDisplayStrings.serializer(), merged)
     }
 
     private fun decodeAssetOrNull(context: Context, assetPath: String): ChatDisplayStrings? =
@@ -194,10 +219,35 @@ private object ChatDisplayStringsStore {
             }
         }.getOrNull()
 
-    private fun canonicalTag(localeTag: String): String = when {
-        localeTag.startsWith("te", ignoreCase = true) -> "te-IN"
-        localeTag.startsWith("hi", ignoreCase = true) -> "hi-IN"
-        else -> "en-US"
+    private fun decodeJsonObjectOrNull(context: Context, assetPath: String): JsonObject? =
+        runCatching {
+            context.assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { reader ->
+                json.parseToJsonElement(reader.readText()).jsonObject
+            }
+        }.getOrNull()
+
+    private fun mergeObjects(base: JsonObject, overlay: JsonObject): JsonObject = buildJsonObject {
+        base.forEach { (k, v) -> put(k, v) }
+        overlay.forEach { (k, v) ->
+            if (v !is JsonPrimitive || !v.isString || v.content.isNotBlank()) {
+                put(k, v)
+            }
+        }
+    }
+
+    private fun canonicalTag(localeTag: String): String {
+        val normalized = localeTag.trim().replace('_', '-')
+        if (normalized.isBlank()) return "en-US"
+
+        supportedLocaleTags.firstOrNull { it.equals(normalized, ignoreCase = true) }?.let { return it }
+
+        val primaryLang = Locale.forLanguageTag(normalized).language
+        if (primaryLang.isNotBlank()) {
+            supportedLocaleTags.firstOrNull {
+                it.startsWith("$primaryLang-", ignoreCase = true)
+            }?.let { return it }
+        }
+        return "en-US"
     }
 }
 

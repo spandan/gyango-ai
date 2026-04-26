@@ -29,7 +29,7 @@ import io.noties.markwon.linkify.LinkifyPlugin
 
 /**
  * JLatexMathPlugin expects `$$…$$` for inline math; models often emit single-dollar `$…$`.
- * Heuristic: only rewrite pairs that look like TeX (backslash, braces, sub/sup markers).
+ * Heuristic: rewrite pairs that look like TeX, like algebra, or like a short variable name (e.g. `$x$`).
  */
 internal fun normalizeSingleDollarLatexForJlMath(markdown: String): String {
     val looksTexy = Regex("""[\\^_{}]|\\frac|\\text|\\mathrm|\\sqrt|\\sum|\\int""")
@@ -39,9 +39,32 @@ internal fun normalizeSingleDollarLatexForJlMath(markdown: String): String {
         val inner = m.groupValues[1]
         val shouldNormalize =
             !looksCurrencyOnly.matches(inner) &&
-                (looksTexy.containsMatchIn(inner) || looksMathy.containsMatchIn(inner))
-        if (shouldNormalize) "$$${inner}$$" else m.value
+                (
+                    looksTexy.containsMatchIn(inner) ||
+                        looksMathy.containsMatchIn(inner) ||
+                        looksLikeLikelyMathShortIdentifier(inner)
+                    )
+        if (shouldNormalize) {
+            val dd = "${'$'}${'$'}"
+            "$dd$inner$dd"
+        } else {
+            m.value
+        }
     }
+}
+
+private val commonEnglishTwoThreeLetter = setOf(
+    "it", "or", "an", "if", "is", "to", "of", "in", "on", "at", "as", "by", "be", "we", "he",
+    "do", "no", "so", "up", "me", "my", "us", "am",
+)
+
+/** Single-letter variables through short alphabetic ids (e.g. `xy`); skip digit-currency and 3-letter ALLCAPS (ISO-ish). */
+private fun looksLikeLikelyMathShortIdentifier(inner: String): Boolean {
+    val t = inner.trim()
+    if (!Regex("""^[A-Za-z]{1,3}$""").matches(t)) return false
+    if (t.length == 3 && t.all { it.isUpperCase() }) return false
+    if (t in commonEnglishTwoThreeLetter) return false
+    return true
 }
 
 @Composable

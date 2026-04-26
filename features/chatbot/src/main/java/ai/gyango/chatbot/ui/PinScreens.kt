@@ -226,7 +226,7 @@ fun PinUnlockScreen(
     var pin by remember { mutableStateOf("") }
     var unlockError by remember { mutableStateOf<String?>(null) }
 
-    var lastName by remember { mutableStateOf("") }
+    var profileName by remember { mutableStateOf("") }
     var birthMonth by remember { mutableStateOf<Int?>(null) }
     var birthYear by remember { mutableStateOf<Int?>(null) }
     var recoveryIdentityError by remember { mutableStateOf<String?>(null) }
@@ -250,7 +250,7 @@ fun PinUnlockScreen(
 
     fun goRecoveryIdentity() {
         modeName = PinUnlockMode.RecoveryIdentity.name
-        lastName = ""
+        profileName = ""
         birthMonth = null
         birthYear = null
         recoveryIdentityError = null
@@ -369,9 +369,9 @@ fun PinUnlockScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 OutlinedTextField(
-                                    value = lastName,
-                                    onValueChange = { lastName = it; recoveryIdentityError = null },
-                                    label = { Text(strings.onboardingLastNameLabel) },
+                                    value = profileName,
+                                    onValueChange = { profileName = it; recoveryIdentityError = null },
+                                    label = { Text(strings.onboardingProfileNameLabel.ifBlank { strings.onboardingFirstNameLabel }) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = EntryScreenFieldShape,
@@ -406,11 +406,11 @@ fun PinUnlockScreen(
                                 }
                                 Button(
                                     onClick = {
-                                        if (lastName.isBlank()) {
+                                        if (profileName.isBlank()) {
                                             recoveryIdentityError = strings.pinResetIdentityError
                                             return@Button
                                         }
-                                        if (!pinStore.verifyRecoveryIdentity(lastName, birthMonth, birthYear)) {
+                                        if (!pinStore.verifyRecoveryIdentity(profileName, birthMonth, birthYear)) {
                                             recoveryIdentityError = strings.pinResetIdentityError
                                             return@Button
                                         }
@@ -473,7 +473,7 @@ fun PinUnlockScreen(
                                             recoveryPinError = strings.pinErrorMismatch
                                             return@Button
                                         }
-                                        if (!pinStore.verifyRecoveryAndSetNewPin(lastName, birthMonth, birthYear, newPin)) {
+                                        if (!pinStore.verifyRecoveryAndSetNewPin(profileName, birthMonth, birthYear, newPin)) {
                                             recoveryPinError = strings.pinResetIdentityError
                                             return@Button
                                         }

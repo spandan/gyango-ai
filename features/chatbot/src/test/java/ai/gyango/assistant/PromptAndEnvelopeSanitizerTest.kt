@@ -2,11 +2,13 @@ package ai.gyango.assistant
 
 import ai.gyango.api.PromptBuilder
 import ai.gyango.core.ChatPreferenceMappings
+import ai.gyango.core.LlmDefaults
 import ai.gyango.core.SafetyProfile
 import ai.gyango.core.SubjectMode
 import ai.gyango.core.SubjectModeAutoRouter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -126,10 +128,19 @@ class PromptAndEnvelopeSanitizerTest {
     }
 
     @Test
-    fun autoRouter_routesSocialGreetingToGeneral() {
+    fun parseSparkChips_stripsExtDeepApplyLabels() {
+        val line = "Ext: Related concept||Deep: Level+2 logic||Apply: Real-world use"
+        assertEquals(
+            listOf("Related concept", "Level+2 logic", "Real-world use"),
+            GyangoOutputEnvelope.parseSparkChips(line),
+        )
+    }
+
+    @Test
+    fun autoRouter_routesUndeterminedTopicToGeneral() {
         assertEquals(SubjectMode.GENERAL, SubjectModeAutoRouter.route("How are you?"))
         assertEquals(SubjectMode.GENERAL, SubjectModeAutoRouter.route("Hello there"))
-        assertEquals(SubjectMode.CURIOSITY, SubjectModeAutoRouter.route("Why is the sky blue?"))
+        assertEquals(SubjectMode.GENERAL, SubjectModeAutoRouter.route("Why is the sky blue?"))
     }
 
     @Test
@@ -147,13 +158,13 @@ class PromptAndEnvelopeSanitizerTest {
     }
 
     @Test
-    fun buildChatPrompt_chemistryUsesScienceBrief() {
+    fun buildChatPrompt_scienceUsesScienceBrief() {
         val p = PromptBuilder.buildChatPrompt(
             lastUserContent = "Balance H2 + O2",
-            subjectMode = SubjectMode.CHEMISTRY,
+            subjectMode = SubjectMode.SCIENCE,
         )
         assertTrue(p.contains("science tutor"))
-        assertTrue(p.contains("Topic: CHEMISTRY"))
+        assertTrue(p.contains("Topic: SCIENCE"))
     }
 
     @Test
@@ -164,9 +175,9 @@ class PromptAndEnvelopeSanitizerTest {
                 subjectMode = mode,
             )
             assertTrue(prompt.contains("---"))
-            assertTrue(prompt.contains("CONTEXT >>"))
-            assertTrue(prompt.contains("SPARKS >>"))
-            assertTrue(prompt.contains("CURIOSITY >>"))
+            assertTrue(Regex("""CONTEXT\s*(?:>>|:)""").containsMatchIn(prompt))
+            assertTrue(Regex("""SPARKS\s*(?:>>|:)""").containsMatchIn(prompt))
+            assertTrue(Regex("""CURIOSITY\s*(?:>>|:)""").containsMatchIn(prompt))
             assertFalse(prompt.contains("TAIL_SCHEMA"))
             assertFalse(prompt.contains("STATE >>"))
         }
@@ -178,8 +189,94 @@ class PromptAndEnvelopeSanitizerTest {
             lastUserContent = "How to prepare for geometry exam?",
             subjectMode = SubjectMode.EXAM_PREP,
         )
-        assertTrue(prompt.contains("exam coach"))
+        assertTrue(prompt.contains("GyanGo Coach", ignoreCase = true))
+        assertTrue(prompt.contains("### Feedback"))
+        assertTrue(prompt.contains("### Next Question"))
+        assertTrue(prompt.contains("Q: None"))
         assertFalse(prompt.contains("### Plan"))
+    }
+
+    @Test
+    fun buildChatPrompt_examPrepLaneOverridesTopicAndInjectsSessionFields() {
+        val prompt = PromptBuilder.buildChatPrompt(
+            lastUserContent = "Let's start the Exam Prep exam.",
+            subjectMode = SubjectMode.EXAM_PREP,
+            examPrepTopicLane = "MATH",
+            examPrepSubtopic = "Quadratic equations",
+            examPrepQuestionTarget = 20,
+            examPrepPriorQuestion = "Solve x^2 + 3x + 2 = 0",
+        )
+        assertTrue(prompt.contains("Topic: MATH", ignoreCase = true))
+        assertTrue(prompt.contains("Quadratic equations"))
+        assertTrue(prompt.contains("20"))
+        assertTrue(prompt.contains("LEARNER_FOCUS", ignoreCase = true))
+        assertTrue(prompt.contains("ADAPTIVE LOGIC", ignoreCase = true))
+        assertTrue(prompt.contains("Q: Solve x^2 + 3x + 2 = 0"))
+    }
+
+    @Test
+    fun promptTemplateAssetPath_usesModelAndTopicNaming() {
+        val path = PromptBuilder.promptTemplateAssetPath(
+            mode = SubjectMode.SCIENCE,
+            promptModelFamily = "gemma4_e2b",
+            promptTemplateVersion = PromptBuilder.PromptTemplateVersion.V2,
+        )
+        assertEquals("prompts/v2/gemma4_e2b_science.txt", path)
+    }
+
+    @Test
+    fun buildChatPrompt_usesProvidedTemplateLoaderWhenAvailable() {
+        var loadedPath: String? = null
+        val prompt = PromptBuilder.buildChatPrompt(
+            lastUserContent = "Hello there",
+            subjectMode = SubjectMode.GENERAL,
+            promptModelFamily = "gemma4_e2b",
+            loadPromptTemplate = { path ->
+                loadedPath = path
+                "<|turn>system\nTemplate test for {{TOPIC}}\n<|turn>user\nU: {{USER_TEXT}}\n<|turn>assistant"
+            },
+        )
+        assertEquals("prompts/v2/gemma4_e2b_general.txt", loadedPath)
+        assertTrue(prompt.contains("Template test for GENERAL"))
+        assertTrue(prompt.contains("U: Hello there"))
+    }
+
+    @Test
+    fun buildChatPrompt_fallsBackToV1WhenV2Missing() {
+        val attempted = mutableListOf<String>()
+        val prompt = PromptBuilder.buildChatPrompt(
+            lastUserContent = "Hello there",
+            subjectMode = SubjectMode.GENERAL,
+            promptModelFamily = "gemma4_e2b",
+            promptTemplateVersion = PromptBuilder.PromptTemplateVersion.V2,
+            loadPromptTemplate = { path ->
+                attempted += path
+                if (path == "prompts/v1/gemma4_e2b_general.txt") {
+                    "<|turn>system\nV1 template for {{TOPIC}}\n<|turn>user\nU: {{USER_TEXT}}\n<|turn>assistant"
+                } else {
+                    null
+                }
+            },
+        )
+        assertEquals(
+            listOf("prompts/v2/gemma4_e2b_general.txt", "prompts/v1/gemma4_e2b_general.txt"),
+            attempted.take(2),
+        )
+        assertTrue(prompt.contains("V1 template for GENERAL"))
+        assertTrue(prompt.contains("U: Hello there"))
+    }
+
+    @Test
+    fun buildChatPrompt_fallsBackWhenTemplateLoaderReturnsNull() {
+        val prompt = PromptBuilder.buildChatPrompt(
+            lastUserContent = "Solve 2x=4",
+            subjectMode = SubjectMode.MATH,
+            promptModelFamily = "gemma4_e2b",
+            loadPromptTemplate = { null },
+        )
+        assertNotNull(prompt)
+        assertTrue(prompt.contains("clear math tutor"))
+        assertTrue(prompt.contains("SPARKS >>"))
     }
 
     @Test
@@ -260,10 +357,14 @@ class PromptAndEnvelopeSanitizerTest {
     }
 
     @Test
-    fun chatPreferenceMappings_shortAndLongCapsDiffer() {
+    fun chatPreferenceMappings_capsMatchEngineBudget() {
         assertTrue(
-            ChatPreferenceMappings.MAX_TOKENS_SHORT_ANSWERS <
+            ChatPreferenceMappings.MAX_TOKENS_SHORT_ANSWERS <=
                 ChatPreferenceMappings.MAX_TOKENS_LONG_ANSWERS,
+        )
+        assertEquals(
+            LlmDefaults.MAX_NEW_TOKENS_CAP,
+            ChatPreferenceMappings.MAX_TOKENS_LONG_ANSWERS,
         )
     }
 

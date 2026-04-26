@@ -30,6 +30,10 @@ class ChatRepository(private val context: Context) {
         private val json = Json { ignoreUnknownKeys = true }
         private val historySerializer = ListSerializer(ChatMessage.serializer())
         private const val INTEREST_SIGNALS_CAP = 36
+
+        /** Legacy installs stored `CURIOSITY` as a subject enum name; map it to `GENERAL` before decode. */
+        private fun migrateLegacySubjectModeInInferenceJson(raw: String): String =
+            raw.replace("\"CURIOSITY\"", "\"GENERAL\"")
     }
 
     val historyFlow: Flow<List<ChatMessage>> =
@@ -49,7 +53,10 @@ class ChatRepository(private val context: Context) {
                 return@map firstLaunchInferenceSettings()
             }
             val decoded = try {
-                json.decodeFromString(InferenceSettings.serializer(), raw)
+                json.decodeFromString(
+                    InferenceSettings.serializer(),
+                    migrateLegacySubjectModeInInferenceJson(raw),
+                )
             } catch (_: Throwable) {
                 InferenceSettings()
             }
@@ -62,7 +69,7 @@ class ChatRepository(private val context: Context) {
             assistantSpeechEnabled = false,
             voiceOnboardingComplete = false,
             pinSetupComplete = false,
-            subjectMode = SubjectMode.CURIOSITY,
+            subjectMode = SubjectMode.GENERAL,
             maxTokens = ChatPreferenceMappings.MAX_TOKENS_SHORT_ANSWERS,
         )
 
@@ -81,16 +88,14 @@ class ChatRepository(private val context: Context) {
             "kn-IN",
             "ml-IN",
             "pa-IN",
+            "fr-FR",
+            "es-ES",
         )
         val speech = if (settings.speechInputLocaleTag in allowed) settings.speechInputLocaleTag else "en-US"
         val thisYear = Year.now().value
         val normalizedBirthMonth = settings.birthMonth?.takeIf { it in 1..12 }
         val normalizedBirthYear = settings.birthYear?.takeIf { it in 1900..thisYear }
         val maxTok = settings.maxTokens.coerceIn(64, LlmDefaults.MAX_NEW_TOKENS_CAP)
-        val normalizedSubject = when (settings.subjectMode) {
-            SubjectMode.PHYSICS, SubjectMode.CHEMISTRY, SubjectMode.BIOLOGY -> SubjectMode.SCIENCE
-            else -> settings.subjectMode
-        }
         val topicSampling = LlmDefaults.samplingForSubject(settings.subjectMode)
         val temp = topicSampling.temperature.coerceIn(
             LlmDefaults.LITERT_MIN_TEMPERATURE,
@@ -102,8 +107,7 @@ class ChatRepository(private val context: Context) {
             settings.voiceOnboardingComplete ||
             (
                 settings.pinSetupComplete &&
-                    settings.userFirstName.isNotBlank() &&
-                    settings.userLastName.isNotBlank()
+                    settings.userProfileName.isNotBlank()
                 )
         return settings.copy(
             temperature = temp,
@@ -111,13 +115,14 @@ class ChatRepository(private val context: Context) {
             topK = topK,
             profileOnboardingSubmitted = profileGateComplete,
             speechInputLocaleTag = speech,
-            userFirstName = settings.userFirstName.trim().take(80),
-            userLastName = settings.userLastName.trim().take(80),
-            userEmail = settings.userEmail.trim().take(120),
+            userProfileName = settings.userProfileName.trim().take(80),
+            userFirstName = "",
+            userLastName = "",
+            userEmail = "",
             birthMonth = normalizedBirthMonth,
             birthYear = normalizedBirthYear,
             maxTokens = maxTok,
-            subjectMode = normalizedSubject,
+            subjectMode = settings.subjectMode,
             safetyProfile = settings.safetyProfile.takeIf { it in SafetyProfile.entries } ?: SafetyProfile.KIDS_STRICT,
             subjectSkillBands = settings.subjectSkillBands.filterKeys { it in SubjectMode.entries }
                 .mapValues { (_, band) -> band.takeIf { it in SkillBand.entries } ?: SkillBand.NEW },

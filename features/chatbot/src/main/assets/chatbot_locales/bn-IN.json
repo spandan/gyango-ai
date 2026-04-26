@@ -1,0 +1,16 @@
+{
+  "settingsTitle": "সেটিংস",
+  "settingsConversationLanguage": "কথোপকথনের ভাষা",
+  "settingsConversationLanguageHint": "সহকারীর উত্তর, স্ক্রিনের লেখা এবং ভয়েস ইনপুটের ভাষা। পরিবর্তনের পর নতুন বার্তায় প্রযোজ্য।",
+  "settingsSpeechPickerTitle": "কথোপকথনের ভাষা",
+  "settingsChangeConversationLanguage": "ভাষা পরিবর্তন করুন",
+  "settingsHubTitle": "সেটিংস",
+  "settingsHubProfileTitle": "ব্যবহারকারী প্রোফাইল",
+  "settingsHubChatTitle": "চ্যাট ও মডেল",
+  "settingsProfileTitle": "ব্যবহারকারী প্রোফাইল",
+  "settingsChatTitle": "চ্যাট ও মডেল",
+  "settingsBack": "ফিরে যান",
+  "settingsClose": "বন্ধ করুন",
+  "onboardingLanguageSection": "ভাষা",
+  "onboardingContinue": "চালিয়ে যান"
+}

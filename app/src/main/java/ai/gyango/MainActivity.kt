@@ -289,6 +289,8 @@ class MainActivity : ComponentActivity() {
                 val generatingState by chatViewModel.isGenerating.collectAsState()
                 val loadingModelState by chatViewModel.isLoadingModel.collectAsState()
                 val modelLoadErrorState by chatViewModel.modelLoadError.collectAsState()
+                val examPrepWizardDraft by chatViewModel.examPrepWizardDraft.collectAsState()
+                val examPrepSetupError by chatViewModel.examPrepSetupError.collectAsState()
                 val documentError by chatViewModel.documentError.collectAsState()
                 val isListeningToMic by chatViewModel.isListeningToMic.collectAsState()
                 val voiceError by chatViewModel.voiceError.collectAsState()
@@ -626,11 +628,9 @@ class MainActivity : ComponentActivity() {
                         }
                         val needsProfileStep =
                             !settingsState.profileOnboardingSubmitted ||
-                                settingsState.userFirstName.isBlank() ||
-                                settingsState.userLastName.isBlank()
+                                settingsState.userProfileName.isBlank()
                         val needsPinSetup =
-                            settingsState.userFirstName.isNotBlank() &&
-                                settingsState.userLastName.isNotBlank() &&
+                            settingsState.userProfileName.isNotBlank() &&
                                 (!settingsState.pinSetupComplete || !appPinStore.hasPin())
                         when {
                             !settingsState.onboardingWelcomeSeen -> {
@@ -841,6 +841,12 @@ class MainActivity : ComponentActivity() {
                                     chatViewModel.onUserSend(text, fromSparkChip)
                                 },
                                 onSettingsChanged = { chatViewModel.updateSettings(it) },
+                                examPrepWizardDraft = examPrepWizardDraft,
+                                examPrepSetupError = examPrepSetupError,
+                                onExamPrepLane = { chatViewModel.setExamPrepLane(it) },
+                                onExamPrepSubtopicContinue = { chatViewModel.setExamPrepSubtopic(it) },
+                                onExamPrepQuestionCount = { chatViewModel.submitExamPrepQuestionCount(it) },
+                                onDismissExamPrepSetupError = { chatViewModel.dismissExamPrepSetupError() },
                                 onReadAloudYesSelected = { tag ->
                                     if (ttsLanguageStatus(tag) != TtsLanguageStatus.READY) {
                                         launchAndroidTtsSetup()
